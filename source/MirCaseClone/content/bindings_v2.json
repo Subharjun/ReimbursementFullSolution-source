@@ -1,0 +1,154 @@
+{
+  "version": "2.0",
+  "resources": [
+    {
+      "resource": "process",
+      "key": "ReimbursementIntakeBot_XP",
+      "id": "processReimbursementIntakeBot_XP",
+      "value": {
+        "name": {
+          "defaultValue": "ReimbursementIntakeBot_XP",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "Email Intake Process",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "ReceiptExtractor_XP",
+      "id": "processReceiptExtractor_XP",
+      "value": {
+        "name": {
+          "defaultValue": "ReceiptExtractor_XP",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "Receipt Extraction",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "StripePayoutWorkflow",
+      "id": "processStripePayoutWorkflow",
+      "value": {
+        "name": {
+          "defaultValue": "StripePayoutWorkflow",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "StripePayoutWorkflow",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true",
+        "subType": "Api"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "NotificationAgent",
+      "id": "processNotificationAgent",
+      "value": {
+        "name": {
+          "defaultValue": "NotificationAgent",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "NotificationAgent",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true",
+        "subType": "Agent"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "ReimbursementClassificationAgent",
+      "id": "processReimbursementClassificationAgent",
+      "value": {
+        "name": {
+          "defaultValue": "ReimbursementClassificationAgent",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "ReimbursementClassificationAgent",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true",
+        "subType": "Agent"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "PolicyRuleCheckWorkflow",
+      "id": "processPolicyRuleCheckWorkflow",
+      "value": {
+        "name": {
+          "defaultValue": "PolicyRuleCheckWorkflow",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "PolicyRuleCheckWorkflow",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true",
+        "subType": "Api"
+      }
+    },
+    {
+      "resource": "app",
+      "key": "classification-approval-app",
+      "id": "appclassification-approval-app",
+      "value": {
+        "name": {
+          "defaultValue": "classification-approval-app",
+          "isExpression": false,
+          "displayName": "App name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "classification-approval-app",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true"
+      }
+    },
+    {
+      "resource": "process",
+      "key": "RejectionNotificationAgent",
+      "id": "processRejectionNotificationAgent",
+      "value": {
+        "name": {
+          "defaultValue": "RejectionNotificationAgent",
+          "isExpression": false,
+          "displayName": "Process name"
+        }
+      },
+      "metadata": {
+        "ActivityName": "RejectionNotificationAgent",
+        "BindingsVersion": "2.2",
+        "DisplayLabel": "name",
+        "SolutionsSupport": "true",
+        "subType": "Agent"
+      }
+    }
+  ]
+}

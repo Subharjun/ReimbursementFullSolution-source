@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>ReimbursementIntakeBot</id>
+    <version>2.0.1</version>
+    <title>ReimbursementIntakeBot</title>
+    <authors>subharjunbose</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Project</description>
+    <tags>VisualBasic VB UiPathStudioProcess</tags>
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="UiPath.GSuite.Activities" version="3.9.10" />
+        <dependency id="UiPath.System.Activities.Runtime" version="26.6.1" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

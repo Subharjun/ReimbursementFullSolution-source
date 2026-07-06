@@ -1,0 +1,237 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "e3d2a074-3c49-4f9a-afdd-f23e44a2ad19",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "employee_email": {
+                        "description": "Who to email (the claimant)",
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "receipt_email": {
+                        "default": "",
+                        "description": "Fallback recipient if employee_email is blank (e.g. echoed by upstream)",
+                        "title": "Receipt Email",
+                        "type": "string"
+                    },
+                    "employee_name": {
+                        "default": "",
+                        "description": "Claimant name for the greeting (optional)",
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "description": "Display/brand name shown as the sender",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "sender_email": {
+                        "default": "",
+                        "description": "Reply-To address replies should go to",
+                        "title": "Sender Email",
+                        "type": "string"
+                    },
+                    "case_id": {
+                        "default": "",
+                        "description": "Maestro case ID",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "erp_system": {
+                        "default": "Stripe",
+                        "description": "Payment system label",
+                        "title": "Erp System",
+                        "type": "string"
+                    },
+                    "payout_id": {
+                        "default": "",
+                        "description": "PaymentIntent / payout id",
+                        "title": "Payout Id",
+                        "type": "string"
+                    },
+                    "contact_id": {
+                        "default": "",
+                        "description": "Stripe customer id",
+                        "title": "Contact Id",
+                        "type": "string"
+                    },
+                    "fund_account_id": {
+                        "default": "",
+                        "description": "Payment method id",
+                        "title": "Fund Account Id",
+                        "type": "string"
+                    },
+                    "payout_status": {
+                        "default": "",
+                        "description": "e.g. succeeded",
+                        "title": "Payout Status",
+                        "type": "string"
+                    },
+                    "payment_status": {
+                        "default": "",
+                        "description": "e.g. payout_initiated",
+                        "title": "Payment Status",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0.0,
+                        "description": "Amount actually charged",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "USD",
+                        "description": "ISO currency code",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "reference_id": {
+                        "default": "",
+                        "description": "Audit reference",
+                        "title": "Reference Id",
+                        "type": "string"
+                    },
+                    "submitted_at": {
+                        "default": "",
+                        "description": "ISO timestamp",
+                        "title": "Submitted At",
+                        "type": "string"
+                    },
+                    "duplicate_detected": {
+                        "default": false,
+                        "description": "Stage 3 flagged this as a duplicate (a real double-payment was averted)",
+                        "title": "Duplicate Detected",
+                        "type": "boolean"
+                    },
+                    "discount_eligible": {
+                        "default": false,
+                        "description": "Claim qualified for an early-payment discount unlocked by fast approval",
+                        "title": "Discount Eligible",
+                        "type": "boolean"
+                    },
+                    "save_as_draft": {
+                        "default": false,
+                        "description": "Draft instead of sending (for tests)",
+                        "title": "Save As Draft",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "employee_email"
+                ]
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "sent": {
+                        "title": "Sent",
+                        "type": "boolean"
+                    },
+                    "to": {
+                        "default": "",
+                        "title": "To",
+                        "type": "string"
+                    },
+                    "subject": {
+                        "default": "",
+                        "title": "Subject",
+                        "type": "string"
+                    },
+                    "message_id": {
+                        "default": "",
+                        "title": "Message Id",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "reply_to": {
+                        "default": "",
+                        "title": "Reply To",
+                        "type": "string"
+                    },
+                    "personal_note": {
+                        "default": "",
+                        "title": "Personal Note",
+                        "type": "string"
+                    },
+                    "details": {
+                        "default": "",
+                        "title": "Details",
+                        "type": "string"
+                    },
+                    "impact_summary": {
+                        "default": "",
+                        "title": "Impact Summary",
+                        "type": "string"
+                    },
+                    "savings": {
+                        "title": "Savings",
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "sent"
+                ]
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "write_note",
+                        "name": "write_note",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "send",
+                        "name": "send",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "write_note",
+                        "label": null
+                    },
+                    {
+                        "source": "write_note",
+                        "target": "send",
+                        "label": null
+                    },
+                    {
+                        "source": "send",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

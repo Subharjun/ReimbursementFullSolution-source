@@ -1,0 +1,83 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+  "$id": "entry-points.json",
+  "entryPoints": [
+    {
+      "filePath": "/content/caseplan.json.bpmn#trigger_HVs1vR",
+      "uniqueId": "7d217604-20f0-40c5-b388-a66377ccb0ca",
+      "type": "CaseManagement",
+      "input": {
+        "type": "object",
+        "properties": {
+          "employeeEmail": {
+            "type": "string",
+            "title": "employeeEmail"
+          },
+          "employeeManagerEmail": {
+            "type": "string",
+            "title": "employeeManagerEmail"
+          },
+          "expenseVendor": {
+            "type": "string",
+            "title": "expenseVendor"
+          },
+          "expenseDate": {
+            "type": "string",
+            "title": "expenseDate"
+          },
+          "expenseAmount": {
+            "type": "number",
+            "format": "float",
+            "title": "expenseAmount"
+          },
+          "expenseCurrency": {
+            "type": "string",
+            "title": "expenseCurrency",
+            "default": "INR"
+          },
+          "expenseTypeConfirmed": {
+            "type": "string",
+            "title": "expenseTypeConfirmed"
+          },
+          "riskScore": {
+            "type": "string",
+            "title": "riskScore"
+          },
+          "duplicateDetected": {
+            "type": "boolean",
+            "title": "duplicateDetected",
+            "default": "false"
+          },
+          "businessPurposeValid": {
+            "type": "boolean",
+            "title": "businessPurposeValid",
+            "default": "true"
+          },
+          "documentAttached": {
+            "type": "boolean",
+            "title": "documentAttached",
+            "default": "false"
+          },
+          "ocrConfidence": {
+            "type": "number",
+            "format": "float",
+            "title": "ocrConfidence",
+            "default": "1.0"
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "finalOutcome": {
+            "type": "string",
+            "title": "finalOutcome"
+          }
+        },
+        "required": []
+      },
+      "displayName": "Start Reimbursement Case"
+    }
+  ]
+}

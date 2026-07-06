@@ -1,0 +1,88 @@
+{
+  "document": {
+    "dsl": "1.0.0",
+    "name": "PolicyRuleCheckWorkflow",
+    "version": "0.0.1",
+    "namespace": "default",
+    "metadata": { "variables": { "schema": { "format": "json", "document": { "type": "object", "properties": {}, "title": "Variables" } } } }
+  },
+  "input": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "expense_type": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "date": { "type": "string" },
+          "document_attached": { "type": "boolean" },
+          "business_purpose_valid": { "type": "boolean" },
+          "risk_score": { "type": "string" },
+          "duplicate_detected": { "type": "boolean" },
+          "policy_json": { "type": "string" }
+        },
+        "title": "Inputs"
+      }
+    }
+  },
+  "output": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "within_spend_limit": { "type": "boolean" },
+          "within_date_window": { "type": "boolean" },
+          "preapproval_ok": { "type": "boolean" },
+          "routing_decision": { "type": "string" },
+          "policy_violations": { "type": "array" },
+          "audit_entry": { "type": "object" }
+        },
+        "title": "Outputs"
+      }
+    }
+  },
+  "do": [
+    {
+      "Sequence_1": {
+        "do": [
+          {
+            "WorkflowStart": {
+              "set": "${Object.entries($workflow.definition?.document?.metadata?.variables?.schema?.document?.properties || {}).reduce((acc, [name, def]) => ({ ...acc, [name]: def?.default }), {}) }",
+              "output": { "as": "${$input}" },
+              "export": { "as": "{ ...$context, variables: { ...$context.variables, ...$output } }" },
+              "metadata": { "activityType": "Assign", "displayName": "Workflow start", "fullName": "Assign", "isTransparent": true }
+            }
+          },
+          {
+            "PolicyEvaluate_1": {
+              "run": {
+                "script": {
+                  "language": "javascript",
+                  "code": "var defaults = { travel: { spend_limit: 50000, auto_approve_threshold: 5000, requires_receipt: true, requires_preapproval_above: 25000 }, food: { spend_limit: 2000, auto_approve_threshold: 2000, requires_receipt: false, requires_preapproval_above: 2000 }, medical: { spend_limit: 25000, auto_approve_threshold: 0, requires_receipt: true, requires_preapproval_above: 0 }, internet: { spend_limit: 2000, auto_approve_threshold: 2000, requires_receipt: false, requires_preapproval_above: 2000 }, equipment: { spend_limit: 75000, auto_approve_threshold: 0, requires_receipt: true, requires_preapproval_above: 10000 }, others: { spend_limit: 5000, auto_approve_threshold: 0, requires_receipt: true, requires_preapproval_above: 0 } }; var dateWindowDays = 90; var pol = defaults; try { if ($workflow.input.policy_json) { var p = JSON.parse($workflow.input.policy_json); if (p && p.categories) { pol = p.categories; } if (p && p.risk_rules && p.risk_rules.date_window_days) { dateWindowDays = p.risk_rules.date_window_days; } } } catch (e) {} var et = ($workflow.input.expense_type || 'others'); var cfg = pol[et] || pol.others || defaults.others; var amount = ($workflow.input.amount || 0); var doc = !!$workflow.input.document_attached; var bp = !!$workflow.input.business_purpose_valid; var risk = ($workflow.input.risk_score || 'High'); var dup = !!$workflow.input.duplicate_detected; var violations = []; var within_spend_limit = amount <= cfg.spend_limit; if (!within_spend_limit) { violations.push('over_spend_limit'); } if (cfg.requires_receipt && !doc) { violations.push('missing_receipt'); } var within_date_window = true; var d = $workflow.input.date; if (!d || String(d).toLowerCase() === 'not provided' || String(d).trim() === '') { within_date_window = false; violations.push('missing_date'); } else { var dt = new Date(d); var now = new Date(); if (isNaN(dt.getTime())) { within_date_window = false; violations.push('invalid_date'); } else { var days = (now - dt) / (1000 * 60 * 60 * 24); if (days > dateWindowDays) { within_date_window = false; violations.push('date_outside_window'); } else if (days < -1) { within_date_window = false; violations.push('future_date'); } } } var preapproval_ok = true; if (cfg.requires_preapproval_above > 0 && amount > cfg.requires_preapproval_above) { preapproval_ok = false; violations.push('preapproval_required'); } if (!bp) { violations.push('no_business_purpose'); } if (dup) { violations.push('duplicate_claim'); } var routing_decision; if (!within_spend_limit || dup) { routing_decision = 'reject'; } else if (risk === 'Low' && within_spend_limit && amount <= cfg.auto_approve_threshold && bp && (!cfg.requires_receipt || doc) && within_date_window && preapproval_ok) { routing_decision = 'auto_approve'; } else { routing_decision = 'manager_review'; } return { case_id: ($workflow.input.case_id || ''), within_spend_limit: within_spend_limit, within_date_window: within_date_window, preapproval_ok: preapproval_ok, routing_decision: routing_decision, policy_violations: violations, audit_entry: { timestamp: new Date().toISOString(), stage: 'policy_check', stage_number: 4, actor: 'PolicyRuleCheckWorkflow', actor_type: 'api_workflow', action: 'policy_evaluated', details: 'Routing: ' + routing_decision + (violations.length ? (' due to ' + violations.join(', ')) : ' (clean)') } };",
+                  "arguments": "${{ \"$context\": $context, \"$workflow\": $workflow, \"$input\": $input }}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"policy_eval\": $output } }" },
+              "metadata": { "activityType": "JsInvoke", "displayName": "Evaluate policy rules (spend limit / date window / pre-approval)", "fullName": "JsInvoke" }
+            }
+          },
+          {
+            "Response_1": {
+              "response": "${$context.outputs.policy_eval}",
+              "markJobAsFailed": false,
+              "then": "end",
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"Response_1\": $output } }" },
+              "metadata": { "activityType": "Response", "displayName": "Return policy decision", "fullName": "Response" }
+            }
+          }
+        ],
+        "metadata": { "activityType": "Sequence", "displayName": "Sequence", "fullName": "Sequence" }
+      }
+    }
+  ],
+  "evaluate": { "mode": "strict", "language": "javascript" }
+}

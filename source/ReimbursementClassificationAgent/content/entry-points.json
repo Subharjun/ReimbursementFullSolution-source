@@ -1,0 +1,236 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "5071f32d-357b-440a-be9d-fea31227cb10",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "case_id": {
+                        "description": "Maestro case ID from Stage 1",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "source_email_body": {
+                        "default": "",
+                        "description": "Raw email body from Stage 1",
+                        "title": "Source Email Body",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "type": "string"
+                    },
+                    "date": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0,
+                        "description": "Amount extracted by IDP, may be 0",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "INR",
+                        "description": "Currency, default INR",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "document_attached": {
+                        "default": false,
+                        "description": "IDP confidence > 0.85",
+                        "title": "Document Attached",
+                        "type": "boolean"
+                    },
+                    "ocr_confidence": {
+                        "type": "number"
+                    },
+                    "employee_email": {
+                        "default": "",
+                        "description": "Sender email from Stage 1",
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "employee_name": {
+                        "default": "",
+                        "description": "Employee name from Stage 1; derived from the email local-part if empty",
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "duplicate_detected": {
+                        "default": false,
+                        "description": "Set by the upstream Orchestrator duplicate check; the agent honours it as a risk override.",
+                        "title": "Duplicate Detected",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "case_id"
+                ]
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "case_id": {
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "expense_type": {
+                        "enum": [
+                            "travel",
+                            "food",
+                            "medical",
+                            "internet",
+                            "equipment",
+                            "others"
+                        ],
+                        "title": "Expense Type",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "title": "Vendor",
+                        "type": "string"
+                    },
+                    "date": {
+                        "title": "Date",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "title": "Reason",
+                        "type": "string"
+                    },
+                    "document_attached": {
+                        "title": "Document Attached",
+                        "type": "boolean"
+                    },
+                    "risk_score": {
+                        "enum": [
+                            "Low",
+                            "Medium",
+                            "High"
+                        ],
+                        "title": "Risk Score",
+                        "type": "string"
+                    },
+                    "duplicate_detected": {
+                        "title": "Duplicate Detected",
+                        "type": "boolean"
+                    },
+                    "business_purpose_valid": {
+                        "title": "Business Purpose Valid",
+                        "type": "boolean"
+                    },
+                    "employee_name": {
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "employee_email": {
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "risk_factors": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Risk Factors",
+                        "type": "array"
+                    },
+                    "classification_confidence": {
+                        "enum": [
+                            "High",
+                            "Medium",
+                            "Low"
+                        ],
+                        "title": "Classification Confidence",
+                        "type": "string"
+                    },
+                    "audit_entry": {
+                        "additionalProperties": true,
+                        "title": "Audit Entry",
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "case_id",
+                    "expense_type",
+                    "amount",
+                    "currency",
+                    "vendor",
+                    "date",
+                    "reason",
+                    "document_attached",
+                    "risk_score",
+                    "duplicate_detected",
+                    "business_purpose_valid",
+                    "employee_name",
+                    "employee_email",
+                    "risk_factors",
+                    "classification_confidence",
+                    "audit_entry"
+                ]
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "classify",
+                        "name": "classify",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "score_risk",
+                        "name": "score_risk",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "classify",
+                        "label": null
+                    },
+                    {
+                        "source": "classify",
+                        "target": "score_risk",
+                        "label": null
+                    },
+                    {
+                        "source": "score_risk",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

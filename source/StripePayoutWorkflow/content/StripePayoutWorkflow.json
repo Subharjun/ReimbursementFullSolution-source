@@ -1,0 +1,173 @@
+{
+  "document": {
+    "dsl": "1.0.0",
+    "name": "StripePayoutWorkflow",
+    "version": "0.0.1",
+    "namespace": "default",
+    "metadata": { "variables": { "schema": { "format": "json", "document": { "type": "object", "properties": {}, "title": "Variables" } } } }
+  },
+  "input": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "employee_email": { "type": "string" },
+          "employee_name": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "expense_type": { "type": "string" },
+          "reason": { "type": "string" },
+          "stripe_secret_key": { "type": "string" },
+          "stripe_publishable_key": { "type": "string" }
+        },
+        "title": "Inputs"
+      }
+    }
+  },
+  "output": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "erp_system": { "type": "string" },
+          "contact_id": { "type": "string" },
+          "fund_account_id": { "type": "string" },
+          "payout_id": { "type": "string" },
+          "payout_status": { "type": "string" },
+          "payment_status": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "reference_id": { "type": "string" },
+          "submitted_at": { "type": "string" }
+        },
+        "title": "Outputs"
+      }
+    }
+  },
+  "do": [
+    {
+      "Sequence_1": {
+        "do": [
+          {
+            "WorkflowStart": {
+              "set": "${Object.entries($workflow.definition?.document?.metadata?.variables?.schema?.document?.properties || {}).reduce((acc, [name, def]) => ({ ...acc, [name]: def?.default }), {}) }",
+              "output": { "as": "${$input}" },
+              "export": { "as": "{ ...$context, variables: { ...$context.variables, ...$output } }" },
+              "metadata": { "activityType": "Assign", "displayName": "Workflow start", "fullName": "Assign", "isTransparent": true }
+            }
+          },
+          {
+            "BuildAuth_1": {
+              "run": {
+                "script": {
+                  "language": "javascript",
+                  "code": "function enc(s){return encodeURIComponent(s==null?'':String(s));} function kv(k,v){return (v==null||String(v).trim()==='')?'':('&'+k+'='+enc(v));} function clip(s,n){s=(s==null?'':String(s));return s.length>n?s.slice(0,n):s;} var secret=($workflow.input.stripe_secret_key||''); var cur=(($workflow.input.currency||'usd')+'').toLowerCase(); var MINS={usd:50,eur:50,gbp:30,aud:50,cad:50,chf:50,sgd:50,nzd:50,inr:50,dkk:250,nok:300,sek:300,jpy:50,hkd:400,mxn:1000}; var minAmt=(MINS[cur]||50); var reqAmt=Math.round((Number($workflow.input.amount)||0)*100); var amt=(reqAmt<minAmt?minAmt:reqAmt); var email=(($workflow.input.employee_email||'')+'').trim(); var name=($workflow.input.employee_name||email||'Employee'); var caseId=($workflow.input.case_id||''); var customerBody='name='+enc(name)+kv('email',email)+'&description='+enc('Reimbursement payee '+caseId)+'&metadata[case_id]='+enc(caseId)+'&metadata[expense_type]='+enc($workflow.input.expense_type||''); var piBody='amount='+amt+'&currency='+enc(cur)+'&payment_method=pm_card_visa&confirm=true&payment_method_types[]=card&description='+enc('Reimbursement '+caseId)+kv('receipt_email',email)+'&metadata[case_id]='+enc(caseId)+'&metadata[expense_type]='+enc($workflow.input.expense_type||'')+'&metadata[reason]='+enc(clip($workflow.input.reason||'',480)); return { authHeader: 'Bearer '+secret, customerBody: customerBody, piBody: piBody };",
+                  "arguments": "${{ \"$context\": $context, \"$workflow\": $workflow, \"$input\": $input }}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"build_auth\": $output } }" },
+              "metadata": { "activityType": "JsInvoke", "displayName": "Build Stripe Bearer auth + form bodies", "fullName": "JsInvoke" }
+            }
+          },
+          {
+            "HttpRequest_Customer": {
+              "call": "UiPath.Http",
+              "with": {
+                "connector": "uipath-uipath-http",
+                "connectionId": "ImplicitConnection",
+                "connectionResourceId": "ImplicitConnection",
+                "method": "POST",
+                "endpoint": "/http-request",
+                "bodyParameters": {
+                  "authentication": "manual",
+                  "method": "POST",
+                  "url": "https://api.stripe.com/v1/customers",
+                  "headers": { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "${$context.outputs.build_auth.authHeader}" },
+                  "body": "${$context.outputs.build_auth.customerBody}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"create_contact\": $output } }" },
+              "metadata": {
+                "fullName": "Connector",
+                "activityType": "Connector",
+                "displayName": "Stripe - create customer (payee)",
+                "uiPathActivityTypeId": "5c4cc855-b42a-37e6-b910-de8588998fce",
+                "assemblyQualifiedName": "Connector",
+                "configuration": "{\"essentialConfiguration\":{\"connectorVersion\":\"\",\"executionType\":null,\"customFieldsRequestDetails\":null,\"instanceParameters\":{\"version\":\"1.0.0\",\"connectorKey\":\"uipath-uipath-http\",\"activityType\":\"Curated\",\"objectName\":\"http-request\",\"httpMethod\":\"POST\",\"operation\":null,\"eventOperation\":null,\"eventMode\":null,\"connectorObjects\":null,\"previewEndpoint\":null},\"objectName\":\"http-request\",\"operation\":null,\"packageVersion\":\"1.0.0\",\"httpMethod\":\"POST\",\"path\":\"/http-request\",\"unifiedTypesCompatible\":true,\"savedJitInputFieldId\":\"in_http-request\"}}"
+              }
+            }
+          },
+          {
+            "ExtractContact_1": {
+              "run": {
+                "script": {
+                  "language": "javascript",
+                  "code": "var r = $context.outputs.create_contact; var c = (r && r.content) ? r.content : {}; return { contact_id: (c.id || null) };",
+                  "arguments": "${{ \"$context\": $context, \"$workflow\": $workflow, \"$input\": $input }}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"extract_contact\": $output } }" },
+              "metadata": { "activityType": "JsInvoke", "displayName": "Extract customer id", "fullName": "JsInvoke" }
+            }
+          },
+          {
+            "HttpRequest_Payout": {
+              "call": "UiPath.Http",
+              "with": {
+                "connector": "uipath-uipath-http",
+                "connectionId": "ImplicitConnection",
+                "connectionResourceId": "ImplicitConnection",
+                "method": "POST",
+                "endpoint": "/http-request",
+                "bodyParameters": {
+                  "authentication": "manual",
+                  "method": "POST",
+                  "url": "https://api.stripe.com/v1/payment_intents",
+                  "headers": { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "${$context.outputs.build_auth.authHeader}" },
+                  "body": "${$context.outputs.build_auth.piBody}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"create_payout\": $output } }" },
+              "metadata": {
+                "fullName": "Connector",
+                "activityType": "Connector",
+                "displayName": "Stripe - create + confirm PaymentIntent (disbursement)",
+                "uiPathActivityTypeId": "5c4cc855-b42a-37e6-b910-de8588998fce",
+                "assemblyQualifiedName": "Connector",
+                "configuration": "{\"essentialConfiguration\":{\"connectorVersion\":\"\",\"executionType\":null,\"customFieldsRequestDetails\":null,\"instanceParameters\":{\"version\":\"1.0.0\",\"connectorKey\":\"uipath-uipath-http\",\"activityType\":\"Curated\",\"objectName\":\"http-request\",\"httpMethod\":\"POST\",\"operation\":null,\"eventOperation\":null,\"eventMode\":null,\"connectorObjects\":null,\"previewEndpoint\":null},\"objectName\":\"http-request\",\"operation\":null,\"packageVersion\":\"1.0.0\",\"httpMethod\":\"POST\",\"path\":\"/http-request\",\"unifiedTypesCompatible\":true,\"savedJitInputFieldId\":\"in_http-request\"}}"
+              }
+            }
+          },
+          {
+            "BuildOutput_1": {
+              "run": {
+                "script": {
+                  "language": "javascript",
+                  "code": "var p = ($context.outputs.create_payout && $context.outputs.create_payout.content) ? $context.outputs.create_payout.content : {}; var status = (p.status || 'unknown'); var ok = (status === 'succeeded' || status === 'processing' || status === 'requires_capture'); var now = new Date(); return { case_id: ($workflow.input.case_id || ''), erp_system: 'Stripe', contact_id: ($context.outputs.extract_contact ? $context.outputs.extract_contact.contact_id : null), fund_account_id: (p.payment_method || 'pm_card_visa'), payout_id: (p.id || null), payout_status: status, payment_status: (ok ? 'payout_initiated' : 'payout_failed'), amount: (p.amount != null ? p.amount / 100 : ($workflow.input.amount || 0)), currency: ((p.currency || $workflow.input.currency || 'usd') + '').toUpperCase(), reference_id: ($workflow.input.case_id || ''), submitted_at: now.toISOString() };",
+                  "arguments": "${{ \"$context\": $context, \"$workflow\": $workflow, \"$input\": $input }}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"build_output\": $output } }" },
+              "metadata": { "activityType": "JsInvoke", "displayName": "Build Stage 5a payout output", "fullName": "JsInvoke" }
+            }
+          },
+          {
+            "Response_1": {
+              "response": "${$context.outputs.build_output}",
+              "markJobAsFailed": false,
+              "then": "end",
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"Response_1\": $output } }" },
+              "metadata": { "activityType": "Response", "displayName": "Return Stage 5a payout output", "fullName": "Response" }
+            }
+          }
+        ],
+        "metadata": { "activityType": "Sequence", "displayName": "Sequence", "fullName": "Sequence" }
+      }
+    }
+  ],
+  "evaluate": { "mode": "strict", "language": "javascript" }
+}

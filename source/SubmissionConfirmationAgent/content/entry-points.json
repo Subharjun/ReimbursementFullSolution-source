@@ -1,0 +1,180 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "1772ff1b-0713-4824-b075-9df11931c3ce",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "employee_email": {
+                        "description": "Who to email (the claimant/submitter)",
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "receipt_email": {
+                        "default": "",
+                        "description": "Fallback recipient if employee_email is blank",
+                        "title": "Receipt Email",
+                        "type": "string"
+                    },
+                    "employee_name": {
+                        "default": "",
+                        "description": "Claimant name for the greeting (optional)",
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "description": "Display/brand name shown as the sender",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "sender_email": {
+                        "default": "",
+                        "description": "Reply-To address replies should go to",
+                        "title": "Sender Email",
+                        "type": "string"
+                    },
+                    "case_id": {
+                        "default": "",
+                        "description": "Maestro case ID, if already known at intake time",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "expense_type": {
+                        "default": "",
+                        "description": "Expense type as entered on the form",
+                        "title": "Expense Type",
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "default": "",
+                        "description": "Vendor / merchant on the claim",
+                        "title": "Vendor",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0.0,
+                        "description": "Amount requested",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "USD",
+                        "description": "ISO currency code",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "save_as_draft": {
+                        "default": false,
+                        "description": "Draft instead of sending (for tests)",
+                        "title": "Save As Draft",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "employee_email"
+                ]
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "sent": {
+                        "title": "Sent",
+                        "type": "boolean"
+                    },
+                    "to": {
+                        "default": "",
+                        "title": "To",
+                        "type": "string"
+                    },
+                    "subject": {
+                        "default": "",
+                        "title": "Subject",
+                        "type": "string"
+                    },
+                    "message_id": {
+                        "default": "",
+                        "title": "Message Id",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "reply_to": {
+                        "default": "",
+                        "title": "Reply To",
+                        "type": "string"
+                    },
+                    "personal_note": {
+                        "default": "",
+                        "title": "Personal Note",
+                        "type": "string"
+                    },
+                    "details": {
+                        "default": "",
+                        "title": "Details",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "sent"
+                ]
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "write_note",
+                        "name": "write_note",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "send",
+                        "name": "send",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "write_note",
+                        "label": null
+                    },
+                    {
+                        "source": "write_note",
+                        "target": "send",
+                        "label": null
+                    },
+                    {
+                        "source": "send",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

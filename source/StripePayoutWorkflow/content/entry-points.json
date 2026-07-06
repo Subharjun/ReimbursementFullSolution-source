@@ -1,0 +1,43 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+  "$id": "entry-points.json",
+  "entryPoints": [
+    {
+      "filePath": "StripePayoutWorkflow.json",
+      "uniqueId": "a984f0bb-cfef-4cfa-b6c8-1d5473efd87c",
+      "type": "api",
+      "input": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "employee_email": { "type": "string" },
+          "employee_name": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "expense_type": { "type": "string" },
+          "reason": { "type": "string" },
+          "stripe_secret_key": { "type": "string" },
+          "stripe_publishable_key": { "type": "string" }
+        },
+        "title": "Inputs"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "case_id": { "type": "string" },
+          "erp_system": { "type": "string" },
+          "contact_id": { "type": "string" },
+          "fund_account_id": { "type": "string" },
+          "payout_id": { "type": "string" },
+          "payout_status": { "type": "string" },
+          "payment_status": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "reference_id": { "type": "string" },
+          "submitted_at": { "type": "string" }
+        },
+        "title": "Outputs"
+      }
+    }
+  ]
+}

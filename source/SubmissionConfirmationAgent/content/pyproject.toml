@@ -1,0 +1,14 @@
+[project]
+name = "SubmissionConfirmationAgent"
+version = "0.0.1"
+description = "Emails the intake-form submitter that their reimbursement request was received"
+authors = [{ name = "Subharjun" }]
+dependencies = [
+    "uipath-langchain>=0.13.0",
+]
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "uipath-dev>=0.0.82",
+]

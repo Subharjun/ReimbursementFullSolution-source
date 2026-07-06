@@ -1,0 +1,81 @@
+{
+  "document": {
+    "dsl": "1.0.0",
+    "name": "ConsensusArbitrationWorkflow",
+    "version": "0.0.1",
+    "namespace": "default",
+    "metadata": { "variables": { "schema": { "format": "json", "document": { "type": "object", "properties": {}, "title": "Variables" } } } }
+  },
+  "input": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "risk_score": { "type": "string" },
+          "classification_confidence": { "type": "string" },
+          "fraud_score": { "type": "number" },
+          "fraud_recommendation": { "type": "string" },
+          "duplicate_detected": { "type": "boolean" },
+          "split_claim_detected": { "type": "boolean" },
+          "policy_routing": { "type": "string" }
+        },
+        "title": "Inputs"
+      }
+    }
+  },
+  "output": {
+    "schema": {
+      "format": "json",
+      "document": {
+        "type": "object",
+        "properties": {
+          "recommendation": { "type": "string" },
+          "rationale": { "type": "string" },
+          "audit_entry": { "type": "object" }
+        },
+        "title": "Outputs"
+      }
+    }
+  },
+  "do": [
+    {
+      "Sequence_1": {
+        "do": [
+          {
+            "WorkflowStart": {
+              "set": "${Object.entries($workflow.definition?.document?.metadata?.variables?.schema?.document?.properties || {}).reduce((acc, [name, def]) => ({ ...acc, [name]: def?.default }), {}) }",
+              "output": { "as": "${$input}" },
+              "export": { "as": "{ ...$context, variables: { ...$context.variables, ...$output } }" },
+              "metadata": { "activityType": "Assign", "displayName": "Workflow start", "fullName": "Assign", "isTransparent": true }
+            }
+          },
+          {
+            "Arbitrate_1": {
+              "run": {
+                "script": {
+                  "language": "javascript",
+                  "code": "var risk = ($workflow.input.risk_score || ''); var conf = ($workflow.input.classification_confidence || ''); var fraudScore = ($workflow.input.fraud_score || 0); var fraudRec = ($workflow.input.fraud_recommendation || 'proceed'); var dup = !!$workflow.input.duplicate_detected; var split = !!$workflow.input.split_claim_detected; var routing = ($workflow.input.policy_routing || 'manager_review'); var recommendation, rationale; if (routing === 'reject' || dup) { var why = []; if (dup) { why.push('a confirmed duplicate (double-payment risk)'); } if (routing === 'reject') { why.push('a hard policy violation or over the category spend limit'); } recommendation = 'REJECT'; rationale = 'Blocked by ' + why.join(' and ') + '.'; } else if (fraudRec === 'reject') { recommendation = 'REJECT'; rationale = 'Fraud Sentinel scored this ' + fraudScore + '/100 (High) - too risky to pay.'; } else if (split || fraudRec === 'review') { recommendation = 'HITL_REVIEW'; rationale = 'Fraud signals warrant a human reviewer before any payout.'; } else if (conf === 'Low' || routing === 'manager_review') { var reason = (conf === 'Low') ? 'low classification confidence' : 'policy requires manager review'; recommendation = 'HITL_REVIEW'; rationale = 'Escalating to a human because of ' + reason + '.'; } else if (routing === 'auto_approve') { recommendation = 'AUTO_APPROVE'; rationale = 'Clean on all three fronts and under the auto-approve threshold - straight through to payout.'; } else { recommendation = 'PROCEED'; rationale = 'No violations or fraud signals; proceeds to payout after a light review.'; } return { recommendation: recommendation, rationale: rationale, audit_entry: { timestamp: new Date().toISOString(), stage: 'consensus_arbitration', stage_number: 5, actor: 'ConsensusArbitrationWorkflow', actor_type: 'api_workflow', action: 'arbitrated', details: recommendation + ': ' + rationale } };",
+                  "arguments": "${{ \"$context\": $context, \"$workflow\": $workflow, \"$input\": $input }}"
+                }
+              },
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"arbitrate\": $output } }" },
+              "metadata": { "activityType": "JsInvoke", "displayName": "Arbitrate three verdicts into one recommendation (documented precedence)", "fullName": "JsInvoke" }
+            }
+          },
+          {
+            "Response_1": {
+              "response": "${$context.outputs.arbitrate}",
+              "markJobAsFailed": false,
+              "then": "end",
+              "export": { "as": "{ ...$context, outputs: { ...$context?.outputs, \"Response_1\": $output } }" },
+              "metadata": { "activityType": "Response", "displayName": "Return consensus recommendation", "fullName": "Response" }
+            }
+          }
+        ],
+        "metadata": { "activityType": "Sequence", "displayName": "Sequence", "fullName": "Sequence" }
+      }
+    }
+  ],
+  "evaluate": { "mode": "strict", "language": "javascript" }
+}

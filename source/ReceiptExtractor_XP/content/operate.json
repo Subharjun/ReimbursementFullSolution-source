@@ -1,0 +1,21 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/operate",
+  "contentType": "Process",
+  "main": "Main.xaml",
+  "dependencies": {
+    "ExtendedExtractionRe.3vgdL3r9UF1Cdn4E3GukYr": "1.0.0",
+    "UiPath.DocumentUnderstanding.Activities": "3.2.0-preview",
+    "UiPath.System.Activities.Runtime": "[26.2.6]",
+    "UiPath.WebAPI.Activities.Runtime": "2.5.0-preview"
+  },
+  "targetFramework": "Portable",
+  "runtimeOptions": {
+    "isAttended": false,
+    "requiresUserInteraction": false,
+    "robotVersion": "26.0.194"
+  },
+  "designOptions": {
+    "projectProfile": "Development",
+    "fileInfoCollection": []
+  }
+}

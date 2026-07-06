@@ -1,0 +1,6 @@
+{
+  "ProjectType": "Api",
+  "Name": "PolicyRuleCheckWorkflow",
+  "Description": "AgentHack Track 1 - Stage 4 policy rule check (spend limit / date window / pre-approval -> routing)",
+  "MainFile": "PolicyRuleCheckWorkflow.json"
+}

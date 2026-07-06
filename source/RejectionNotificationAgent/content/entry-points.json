@@ -1,0 +1,204 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "f9ef7e18-535a-47b3-8ec4-29c2bf187289",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "employee_email": {
+                        "description": "Who to email (the claimant)",
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "receipt_email": {
+                        "default": "",
+                        "description": "Fallback recipient if employee_email is blank",
+                        "title": "Receipt Email",
+                        "type": "string"
+                    },
+                    "employee_name": {
+                        "default": "",
+                        "description": "Claimant name for the greeting (optional)",
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "description": "Display/brand name shown as the sender",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "sender_email": {
+                        "default": "",
+                        "description": "Reply-To address replies should go to",
+                        "title": "Sender Email",
+                        "type": "string"
+                    },
+                    "case_id": {
+                        "default": "",
+                        "description": "Maestro case ID",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "expense_type": {
+                        "default": "",
+                        "description": "Classified expense type",
+                        "title": "Expense Type",
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "default": "",
+                        "description": "Vendor / merchant on the claim",
+                        "title": "Vendor",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0.0,
+                        "description": "Amount the claimant requested",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "USD",
+                        "description": "ISO currency code",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "risk_score": {
+                        "default": "",
+                        "description": "Risk score (e.g. High/Medium/Low) - context only, NOT shown to claimant",
+                        "title": "Risk Score",
+                        "type": "string"
+                    },
+                    "classification_confidence": {
+                        "default": "",
+                        "description": "Classifier confidence - context only, NOT shown to claimant",
+                        "title": "Classification Confidence",
+                        "type": "string"
+                    },
+                    "reviewer_notes": {
+                        "default": "",
+                        "description": "The reviewer's reason for rejecting (shown verbatim)",
+                        "title": "Reviewer Notes",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "default": "",
+                        "description": "Original claim reason / fallback explanation text",
+                        "title": "Reason",
+                        "type": "string"
+                    },
+                    "save_as_draft": {
+                        "default": false,
+                        "description": "Draft instead of sending (for tests)",
+                        "title": "Save As Draft",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "employee_email"
+                ]
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "sent": {
+                        "title": "Sent",
+                        "type": "boolean"
+                    },
+                    "to": {
+                        "default": "",
+                        "title": "To",
+                        "type": "string"
+                    },
+                    "subject": {
+                        "default": "",
+                        "title": "Subject",
+                        "type": "string"
+                    },
+                    "message_id": {
+                        "default": "",
+                        "title": "Message Id",
+                        "type": "string"
+                    },
+                    "sender_name": {
+                        "default": "",
+                        "title": "Sender Name",
+                        "type": "string"
+                    },
+                    "reply_to": {
+                        "default": "",
+                        "title": "Reply To",
+                        "type": "string"
+                    },
+                    "personal_note": {
+                        "default": "",
+                        "title": "Personal Note",
+                        "type": "string"
+                    },
+                    "details": {
+                        "default": "",
+                        "title": "Details",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "sent"
+                ]
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "write_note",
+                        "name": "write_note",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "send",
+                        "name": "send",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "write_note",
+                        "label": null
+                    },
+                    {
+                        "source": "write_note",
+                        "target": "send",
+                        "label": null
+                    },
+                    {
+                        "source": "send",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

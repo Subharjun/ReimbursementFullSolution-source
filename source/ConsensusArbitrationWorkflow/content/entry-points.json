@@ -1,0 +1,33 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+  "$id": "entry-points.json",
+  "entryPoints": [
+    {
+      "filePath": "ConsensusArbitrationWorkflow.json",
+      "uniqueId": "dc62dc49-d569-4c8f-a173-e04acf963fb0",
+      "type": "api",
+      "input": {
+        "type": "object",
+        "properties": {
+          "risk_score": { "type": "string" },
+          "classification_confidence": { "type": "string" },
+          "fraud_score": { "type": "number" },
+          "fraud_recommendation": { "type": "string" },
+          "duplicate_detected": { "type": "boolean" },
+          "split_claim_detected": { "type": "boolean" },
+          "policy_routing": { "type": "string" }
+        },
+        "title": "Inputs"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "recommendation": { "type": "string" },
+          "rationale": { "type": "string" },
+          "audit_entry": { "type": "object" }
+        },
+        "title": "Outputs"
+      }
+    }
+  ]
+}

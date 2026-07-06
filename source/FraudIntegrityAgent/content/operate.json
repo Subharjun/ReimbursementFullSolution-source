@@ -1,0 +1,12 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/operate",
+  "main": "agent",
+  "targetFramework": "Portable",
+  "runtimeOptions": {
+    "requiresUserInteraction": false,
+    "isAttended": false,
+    "isConversational": false
+  },
+  "contentType": "agent",
+  "targetRuntime": "python"
+}

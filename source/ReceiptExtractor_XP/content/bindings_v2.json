@@ -1,0 +1,22 @@
+{
+  "version": "2.0",
+  "resources": [
+    {
+      "activityDisplayName": "Download Storage File",
+      "activityId": "DownloadStorageFile_1",
+      "resource": "bucket",
+      "key": "Receipt",
+      "id": "bucketReceiptReceiptFalse",
+      "value": {
+        "name": {
+          "defaultValue": "Receipt",
+          "isExpression": false,
+          "displayName": "Storage Bucket Name"
+        }
+      },
+      "metadata": {
+        "BindingsVersion": "2.2"
+      }
+    }
+  ]
+}

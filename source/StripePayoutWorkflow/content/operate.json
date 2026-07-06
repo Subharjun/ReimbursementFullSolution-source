@@ -1,0 +1,11 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/operate",
+  "contentType": "Api",
+  "projectId": "",
+  "main": "StripePayoutWorkflow.json",
+  "targetFramework": "Portable",
+  "runtimeOptions": {
+    "isAttended": false,
+    "requiresUserInteraction": false
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "ProjectType": "Api",
+  "Name": "ConsensusArbitrationWorkflow",
+  "Description": "AgentHack Track 1 - Consensus arbitration: reconciles Classify/Fraud/Policy verdicts into one recommendation (AUTO_APPROVE/PROCEED/HITL_REVIEW/REJECT) via documented precedence. Ports ConsensusEngine/debate.py _arbitrate.",
+  "MainFile": "ConsensusArbitrationWorkflow.json"
+}

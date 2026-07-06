@@ -1,0 +1,6 @@
+{
+  "ProjectType": "Api",
+  "Name": "StripePayoutWorkflow",
+  "Description": "AgentHack Track 1 - Stage 5a Stripe reimbursement payout",
+  "MainFile": "StripePayoutWorkflow.json"
+}

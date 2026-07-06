@@ -1,0 +1,183 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "8ad0c0c3-d7f7-406a-93c1-5cd6f261d227",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "case_id": {
+                        "default": "",
+                        "description": "Maestro case ID of the claim under review",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "employee_email": {
+                        "default": "",
+                        "description": "Claimant email (used for velocity checks)",
+                        "title": "Employee Email",
+                        "type": "string"
+                    },
+                    "employee_name": {
+                        "default": "",
+                        "description": "Claimant name (context only)",
+                        "title": "Employee Name",
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "default": "",
+                        "description": "Vendor / merchant on the claim",
+                        "title": "Vendor",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0.0,
+                        "description": "Claimed amount",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "USD",
+                        "description": "ISO currency code",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "date": {
+                        "default": "",
+                        "description": "Expense date (YYYY-MM-DD or MM/DD/YYYY)",
+                        "title": "Date",
+                        "type": "string"
+                    },
+                    "expense_type": {
+                        "default": "",
+                        "description": "Classified expense type (context only)",
+                        "title": "Expense Type",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "default": "",
+                        "description": "Claim reason / purpose (context only)",
+                        "title": "Reason",
+                        "type": "string"
+                    },
+                    "claim_history": {
+                        "description": "Recent prior claims [{vendor, amount, currency, date, employee_email, case_id}] for duplicate / split / velocity detection. Empty is valid (no history available).",
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "title": "Claim History",
+                        "type": "array"
+                    }
+                },
+                "required": []
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "fraud_score": {
+                        "default": 0,
+                        "title": "Fraud Score",
+                        "type": "integer"
+                    },
+                    "integrity_risk": {
+                        "default": "Low",
+                        "title": "Integrity Risk",
+                        "type": "string"
+                    },
+                    "recommendation": {
+                        "default": "proceed",
+                        "title": "Recommendation",
+                        "type": "string"
+                    },
+                    "duplicate_detected": {
+                        "default": false,
+                        "title": "Duplicate Detected",
+                        "type": "boolean"
+                    },
+                    "split_claim_detected": {
+                        "default": false,
+                        "title": "Split Claim Detected",
+                        "type": "boolean"
+                    },
+                    "flags": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "title": "Flags",
+                        "type": "array"
+                    },
+                    "explanation": {
+                        "default": "",
+                        "title": "Explanation",
+                        "type": "string"
+                    },
+                    "summary": {
+                        "default": "",
+                        "title": "Summary",
+                        "type": "string"
+                    },
+                    "assumptions": {
+                        "additionalProperties": true,
+                        "title": "Assumptions",
+                        "type": "object"
+                    }
+                },
+                "required": []
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "detect",
+                        "name": "detect",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "explain",
+                        "name": "explain",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "detect",
+                        "label": null
+                    },
+                    {
+                        "source": "detect",
+                        "target": "explain",
+                        "label": null
+                    },
+                    {
+                        "source": "explain",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

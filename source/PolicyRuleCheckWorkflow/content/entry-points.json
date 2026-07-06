@@ -1,0 +1,74 @@
+{
+  "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+  "$id": "entry-points.json",
+  "entryPoints": [
+    {
+      "filePath": "PolicyRuleCheckWorkflow.json",
+      "uniqueId": "bccbb9eb-e036-47e6-bcdd-30702186bfaf",
+      "type": "api",
+      "input": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "expense_type": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "document_attached": {
+            "type": "boolean"
+          },
+          "business_purpose_valid": {
+            "type": "boolean"
+          },
+          "risk_score": {
+            "type": "string"
+          },
+          "duplicate_detected": {
+            "type": "boolean"
+          },
+          "policy_json": {
+            "type": "string"
+          }
+        },
+        "title": "Inputs"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "within_spend_limit": {
+            "type": "boolean"
+          },
+          "within_date_window": {
+            "type": "boolean"
+          },
+          "preapproval_ok": {
+            "type": "boolean"
+          },
+          "routing_decision": {
+            "type": "string"
+          },
+          "policy_violations": {
+            "type": "array"
+          },
+          "audit_entry": {
+            "type": "object"
+          }
+        },
+        "title": "Outputs"
+      }
+    }
+  ]
+}
