@@ -1,0 +1,113 @@
+# Reimbursement Full Solution — UiPath AgentHack 2026 (Track 1)
+
+An end-to-end, **agentic** expense-reimbursement system built on **UiPath Maestro
+Case Management**, driven by a public intake site and made transparent by a
+multi-agent **Consensus Engine**. A claim submitted on the live site flows
+through Intake → IDP → Classification → Policy → Human Review → Stripe payout →
+Notification — every step a **real Orchestrator job**, not a mock.
+
+> **Live demo:** https://reimbursement-intake-v2.onrender.com
+> &nbsp;·&nbsp; Form `/` &nbsp;·&nbsp; Consensus Engine `/dashboard` &nbsp;·&nbsp; Ops panel `/admin`
+
+---
+
+## What's in this repo
+
+This is the **umbrella submission repo** — everything that makes up the solution,
+in one place. Each app also lives in its own standalone repo (linked below).
+
+| Folder | What it is |
+|---|---|
+| [`source/`](source/) | The **UiPath Maestro Case + agents/workflows** package sources (extracted): `MirCaseClone` (the Case), `ReimbursementClassificationAgent`, `PolicyRuleCheckWorkflow`, `StripePayoutWorkflow`, `NotificationAgent`, `RejectionNotificationAgent`, `SubmissionConfirmationAgent`, `ReceiptExtractor_XP`, `ReimbursementIntakeBot_XP`, plus `FraudIntegrityAgent` & `ConsensusArbitrationWorkflow`. |
+| [`downloaded_packages/`](downloaded_packages/) | The corresponding `.nupkg` build artifacts. |
+| [`reimbursement-intake-v2/`](reimbursement-intake-v2/) | The **live app** (FastAPI + React SPA): the public intake form, the Consensus Engine `/dashboard`, and the `/admin` ops panel. This is what triggers the Case. |
+| [`reimbursement-admin-dashboard/`](reimbursement-admin-dashboard/) | The **standalone** live-ops + consensus-debate dashboard (earlier split-out service; kept for reference). |
+
+**Standalone repos:**
+- Case source — https://github.com/Subharjun/ReimbursementFullSolution-source
+- Intake app — https://github.com/Subharjun/reimbursement-intake-v2
+- Admin dashboard — https://github.com/Subharjun/reimbursement-admin-dashboard
+
+---
+
+## Architecture
+
+```
+  Public intake site  (reimbursement-intake-v2 on Render)
+        │  POST /api/submit  → uploads receipt to the Receipt bucket
+        │                    → Orchestrator StartJobs (with EntryPointPath)
+        ▼
+  ┌──────────────────────────  MirCaseClone  (Maestro Case, serverless) ──────────────────────────┐
+  │  Intake (Email) ─▶ IDP Digitize (Receipt Extraction) ─▶ Classification                          │
+  │        ├─ ReimbursementClassificationAgent  (LLM agent)                                          │
+  │        ├─ PolicyRuleCheckWorkflow           (dynamic policy DB)                                  │
+  │        └─ classification-approval-app       (Human review · HITL)                                │
+  │   ├─(approve)─▶ StripePayoutWorkflow ─▶ NotificationAgent ─▶ end                                 │
+  │   └─(reject)──▶ RejectionNotificationAgent ─▶ end                                                │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────┘
+        │  (observationally, in parallel — never dispatches actions)
+        ▼
+  Consensus Engine  (/dashboard) — a 3-round multi-agent debate over each claim
+        Cleo (Classifier) · Rex (Fraud Sentinel) · Pola (Policy Arbiter) → auditable verdict
+```
+
+### The Consensus Engine (the differentiator)
+Invoice/receipt reading is commoditized. What isn't: three specialised agents
+**cross-examining each other** and reaching a defensible, auditable consensus —
+with the dissent recorded. Fresh submissions are scored **hybrid-live**:
+
+- **Classifier** and **Policy** run as **real Orchestrator jobs** (the deployed
+  `ReimbursementClassificationAgent` / `PolicyRuleCheckWorkflow`), each with a
+  per-agent graceful fallback to a deterministic local port if a job faults or a
+  release key drifts — so the dashboard never goes dark.
+- **Fraud screening** and the **final arbitration** are deterministic code by
+  design (the verdict never comes from an LLM — it's auditable precedence logic).
+- Each card shows a **⚡ LIVE / HYBRID / DETERMINISTIC** badge; click a job id to
+  verify the real Orchestrator job. A pinned hero surfaces the case where the
+  **debate changed the outcome** (agents that would have approved solo, caught by
+  cross-examination).
+- The intake success screen shows a **live case timeline** driven off the real
+  MirCaseClone stage cursor.
+
+---
+
+## Tech
+
+- **UiPath**: Maestro Case Management (`MirCaseClone`), coded/LLM agents, API
+  workflows, Integration Service (Gmail), Action Center (HITL), Orchestrator
+  (serverless jobs), Storage buckets.
+- **App**: Python 3 · FastAPI · React + Vite (TypeScript) · deployed on Render
+  (Docker). Auth via OAuth `client_credentials` (Confidential External App).
+- **Payout**: Stripe (inside `StripePayoutWorkflow`). **Email**: Gmail via
+  Integration Service.
+
+## Tenant & key identifiers
+
+- Tenant: `https://staging.uipath.com/hackathon26_332/DefaultTenant` (UiPath Labs / AgentHack)
+- Folder: `Shared/ReimbursementFullSolution` — key `a1dc9c4b-4ba4-4ac1-837d-9c6b093457a3`, id `3152226`
+- Case: `MirCaseClone` (`ReimbursementApiSolution.Case.mir_clone_project`), entry point `/content/caseplan.json.bpmn#trigger_HVs1vR`
+
+> Orchestrator **release keys drift on every redeploy** — the app reads them from
+> env-overridable constants. See each app's README for the current values and the
+> read-only inspection cookbook.
+
+---
+
+## Run it locally
+
+**Intake app** (form + `/dashboard` + `/admin`):
+```bash
+cd reimbursement-intake-v2
+cp .env.example .env          # set UIPATH_CLIENT_ID/SECRET, ADMIN_USER/PASSWORD
+npm install && npm run build  # build the React SPA into dist/
+pip install -r requirements.txt
+uvicorn api:app --reload      # http://localhost:8000
+```
+
+See [`reimbursement-intake-v2/README.md`](reimbursement-intake-v2/README.md) and
+[`reimbursement-admin-dashboard/README.md`](reimbursement-admin-dashboard/README.md)
+for full details, env vars, and the standing operational rules.
+
+---
+
+*Built for UiPath AgentHack 2026, Track 1 (Reimbursement). Author: Subharjun Bose.*

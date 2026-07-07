@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: reimbursement-admin-dashboard
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      # ── UiPath auth — prefer client_credentials (no manual token refresh) ──
+      - key: UIPATH_CLIENT_ID
+        sync: false
+      - key: UIPATH_CLIENT_SECRET
+        sync: false
+      # Fallback if the two above aren't set (expires ~1hr, needs manual refresh)
+      - key: UIPATH_ACCESS_TOKEN
+        sync: false
+
+      # ── Admin panel HTTP Basic auth — required, no default ─────────────────
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # ── Pre-filled with the ReimbursementFullSolution tenant values ────────
+      - key: UIPATH_BASE_URL
+        value: https://staging.uipath.com/hackathon26_332/DefaultTenant
+      - key: UIPATH_ADMIN_FOLDER_ID
+        value: "3152226"
+      - key: UIPATH_FOLDER_KEY
+        value: a1dc9c4b-4ba4-4ac1-837d-9c6b093457a3
+      - key: UIPATH_ORG_UNIT_ID
+        value: "3152226"
+      - key: UIPATH_ORCH_FOLDER_ID
+        value: "3152226"
+      - key: UIPATH_CONFIRMATION_RELEASE_KEY
+        value: ff4b2d54-d0f9-43b7-a21b-7ac1d90afe1a

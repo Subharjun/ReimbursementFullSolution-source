@@ -1,1 +1,16 @@
+# OS
 .DS_Store
+
+# Node / Vite (intake app)
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+
+# Secrets — never commit real credentials (only .env.example is tracked)
+.env
+*.env
+!.env.example

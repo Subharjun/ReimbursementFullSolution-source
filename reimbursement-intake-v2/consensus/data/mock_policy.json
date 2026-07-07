@@ -1,0 +1,41 @@
+{
+  "policy_version": "1.0",
+  "effective_date": "2026-06-01",
+  "owner": "Subharjun",
+  "description": "Mock policy DB for AgentHack Track 1 - Reimbursement. Single source of truth for spend limits, auto-approve thresholds, risk rules, and classification keywords. Read by Stage 2 IDP (Rashmi), Stage 3 Classification Agent (Subharjun), and Stage 4 Policy Check (Mir). NOTE: ReimbursementClassificationAgent/data/mock_policy.json is the packaged copy that ships with the agent - keep the two in sync.",
+  "default_currency": "INR",
+  "supported_currencies": ["INR", "USD", "EUR", "GBP", "AED"],
+
+  "categories": {
+    "travel":    { "spend_limit": 50000, "auto_approve_threshold": 5000,  "requires_receipt": true,  "requires_preapproval_above": 25000 },
+    "food":      { "spend_limit": 2000,  "auto_approve_threshold": 2000,  "requires_receipt": false, "requires_preapproval_above": 2000 },
+    "medical":   { "spend_limit": 25000, "auto_approve_threshold": 0,     "requires_receipt": true,  "requires_preapproval_above": 0 },
+    "internet":  { "spend_limit": 2000,  "auto_approve_threshold": 2000,  "requires_receipt": false, "requires_preapproval_above": 2000 },
+    "equipment": { "spend_limit": 75000, "auto_approve_threshold": 0,     "requires_receipt": true,  "requires_preapproval_above": 10000 },
+    "others":    { "spend_limit": 5000,  "auto_approve_threshold": 0,     "requires_receipt": true,  "requires_preapproval_above": 0 }
+  },
+
+  "risk_rules": {
+    "high_amount_threshold": 5000,
+    "medium_amount_threshold": 1000,
+    "max_reasonable_amount": 50000,
+    "travel_medium_band_min": 2000,
+    "travel_medium_band_max": 5000,
+    "ocr_confidence_min": 0.85,
+    "duplicate_window_days": 7,
+    "suspicious_phrases": ["urgent approval", "ignore", "bypass", "do not check", "skip approval"]
+  },
+
+  "expense_type_keywords": {
+    "travel":    ["flight", "hotel", "train", "cab", "taxi", "airline", "airfare", "uber", "ola", "indigo", "spicejet", "vistara", "irctc"],
+    "food":      ["food", "meal", "meals", "lunch", "dinner", "snacks", "restaurant", "cafeteria", "coffee", "cafe", "swiggy", "zomato"],
+    "medical":   ["doctor", "hospital", "medicine", "pharmacy", "clinic", "treatment", "medical", "apollo", "diagnostic"],
+    "internet":  ["wifi", "broadband", "internet", "jio", "airtel", "bsnl", "vodafone", "data plan", "recharge"],
+    "equipment": ["laptop", "monitor", "keyboard", "mouse", "headset", "hardware", "equipment", "webcam", "docking", "charger", "ssd"]
+  },
+
+  "business_purpose_keywords": {
+    "valid":   ["work", "client", "project", "office", "meeting", "official", "business", "duty", "conference", "team", "onsite", "deployment"],
+    "invalid": ["personal", "entertainment", "gaming", "game", "party", "vacation", "holiday", "gift", "leisure"]
+  }
+}

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reimbursement Consensus Engine — Live Console</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580;
+    --classifier:#6366f1; --fraud:#f0475f; --policy:#12b5a5;
+    --approve:#2dd4a7; --review:#f5a524; --reject:#f0475f;
+    --accent:#38bdf8;
+    --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+    --radius:14px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono","Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+      --ink:#141a26; --muted:#5a6478; --faint:#97a0b3;
+      --grid:rgba(15,25,45,.03);
+      --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580; --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+    --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+    --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:44px 44px;
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:26px 22px 72px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted)}
+
+  /* ---- header ---- */
+  header.bar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:22px}
+  .brand{display:flex; flex-direction:column; gap:3px}
+  .brand h1{margin:0; font-size:20px; letter-spacing:-.01em; font-weight:650}
+  .brand .sub{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.02em}
+  .bar .spacer{flex:1}
+  .status{display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted);
+    background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:7px 13px}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--approve); box-shadow:0 0 0 0 rgba(45,212,167,.5); animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,167,.45)}70%{box-shadow:0 0 0 7px rgba(45,212,167,0)}100%{box-shadow:0 0 0 0 rgba(45,212,167,0)}}
+  .tbtn{background:var(--panel); border:1px solid var(--line); color:var(--muted); border-radius:999px; width:38px; height:38px;
+    cursor:pointer; font-size:15px; display:grid; place-items:center}
+  .tbtn:hover{color:var(--ink); border-color:var(--faint)}
+
+  /* ---- KPI telemetry ---- */
+  .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:22px}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px; box-shadow:var(--shadow); position:relative; overflow:hidden}
+  .kpi .k-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted)}
+  .kpi .k-val{font-family:var(--mono); font-size:26px; font-weight:600; margin-top:8px; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .kpi .k-sub{font-size:11px; color:var(--faint); margin-top:2px}
+  .kpi.accent-dup .k-val{color:var(--reject)} .kpi.accent-save .k-val{color:var(--approve)} .kpi.accent-hr .k-val{color:var(--accent)}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.kpis{grid-template-columns:repeat(2,1fr)}}
+
+  /* ---- pipeline rail ---- */
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+  .card .hd{display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line)}
+  .card .hd h2{margin:0; font-size:13px; font-weight:600; letter-spacing:.01em}
+  .card .hd .hint{font-family:var(--mono); font-size:11px; color:var(--faint); margin-left:auto}
+  section{margin-bottom:20px}
+
+  .rail{display:flex; align-items:stretch; gap:0; padding:20px 18px; overflow-x:auto}
+  .stage{flex:1 0 auto; min-width:84px; display:flex; flex-direction:column; align-items:center; gap:9px; position:relative; text-align:center}
+  .stage:not(:last-child)::after{content:""; position:absolute; top:20px; right:-2px; width:calc(100% - 40px); height:2px;
+    left:calc(50% + 20px); background:var(--line)}
+  .node{width:40px; height:40px; border-radius:11px; background:var(--panel-2); border:1px solid var(--line);
+    display:grid; place-items:center; font-size:17px; z-index:1; transition:transform .25s, border-color .25s, box-shadow .25s}
+  .stage .s-name{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+  .stage.consensus .node{border-color:var(--accent)}
+  .stage.lit .node{border-color:var(--accent); box-shadow:0 0 0 4px rgba(56,189,248,.16); transform:translateY(-2px)}
+  .stage.done .node{border-color:var(--approve)}
+  .consensus-bracket{font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; color:var(--accent); text-transform:uppercase; margin-top:2px}
+
+  /* ---- case tabs ---- */
+  .tabs{display:flex; gap:9px; flex-wrap:wrap; padding:14px 18px 0}
+  .tab{display:flex; align-items:center; gap:9px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+    padding:9px 13px; cursor:pointer; transition:border-color .2s, background .2s}
+  .tab:hover{border-color:var(--faint)}
+  .tab.active{border-color:var(--accent); background:color-mix(in oklab, var(--accent) 10%, var(--panel))}
+  .tab .t-idx{font-family:var(--mono); font-size:10px; color:var(--faint)}
+  .tab .t-title{font-size:12.5px; font-weight:550}
+  .tab .chip{font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; padding:2px 7px; border-radius:6px; text-transform:uppercase}
+  .runall{margin-left:auto; align-self:center}
+  .runall button{font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--bg);
+    background:var(--accent); border:0; border-radius:8px; padding:9px 15px; cursor:pointer; font-weight:600}
+  .runall button:disabled{opacity:.5; cursor:default}
+
+  .chip.approve{background:color-mix(in oklab,var(--approve) 18%,transparent); color:var(--approve)}
+  .chip.review{background:color-mix(in oklab,var(--review) 20%,transparent); color:var(--review)}
+  .chip.reject{background:color-mix(in oklab,var(--reject) 18%,transparent); color:var(--reject)}
+
+  /* ---- debate theater ---- */
+  .theater{display:grid; grid-template-columns:1.55fr 1fr; gap:16px; padding:16px 18px 20px}
+  @media(max-width:860px){.theater{grid-template-columns:1fr}}
+  .blurb{font-size:12.5px; color:var(--muted); padding:2px 2px 12px; border-bottom:1px dashed var(--line); margin-bottom:14px}
+  .feed{display:flex; flex-direction:column; gap:12px; min-height:260px}
+  .round-div{font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+    display:flex; align-items:center; gap:10px; margin-top:6px}
+  .round-div::after{content:""; flex:1; height:1px; background:var(--line)}
+  .turn{display:flex; gap:11px; opacity:0; transform:translateY(6px); animation:rise .38s forwards}
+  @keyframes rise{to{opacity:1; transform:none}}
+  .av{width:34px; height:34px; border-radius:10px; flex:none; display:grid; place-items:center; font-size:17px;
+    border:1.5px solid; background:var(--panel-2)}
+  .av.classifier{border-color:var(--classifier)} .av.fraud{border-color:var(--fraud)} .av.policy{border-color:var(--policy)}
+  .bubble{flex:1; min-width:0}
+  .bwho{display:flex; align-items:center; gap:8px; margin-bottom:3px; flex-wrap:wrap}
+  .bwho .nm{font-size:12.5px; font-weight:600}
+  .bwho .rl{font-family:var(--mono); font-size:10px; color:var(--muted)}
+  .stance{font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; padding:2px 6px; border-radius:5px; border:1px solid var(--line); color:var(--muted)}
+  .stance.challenge,.stance.veto{color:var(--fraud); border-color:color-mix(in oklab,var(--fraud) 40%,var(--line))}
+  .stance.concede{color:var(--review); border-color:color-mix(in oklab,var(--review) 40%,var(--line))}
+  .stance.arbitrate{color:var(--accent); border-color:color-mix(in oklab,var(--accent) 40%,var(--line))}
+  .stance.agree{color:var(--approve); border-color:color-mix(in oklab,var(--approve) 40%,var(--line))}
+  .btext{font-size:13px; color:var(--ink)}
+  .btext strong{font-weight:650}
+  .btext .men{font-family:var(--mono); font-size:12px; padding:0 2px; border-radius:4px; background:var(--panel-2); color:var(--muted)}
+
+  /* ---- verdict + side ---- */
+  .side{display:flex; flex-direction:column; gap:14px}
+  .verdict{border:1px solid var(--line); border-radius:12px; padding:16px; background:var(--panel-2)}
+  .verdict .vlabel{font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted)}
+  .verdict .vmain{font-family:var(--mono); font-size:22px; font-weight:650; margin:6px 0 4px; letter-spacing:-.01em}
+  .verdict.approve{border-color:color-mix(in oklab,var(--approve) 45%,var(--line))} .verdict.approve .vmain{color:var(--approve)}
+  .verdict.review{border-color:color-mix(in oklab,var(--review) 45%,var(--line))} .verdict.review .vmain{color:var(--review)}
+  .verdict.reject{border-color:color-mix(in oklab,var(--reject) 45%,var(--line))} .verdict.reject .vmain{color:var(--reject)}
+  .verdict .vrat{font-size:12px; color:var(--muted); margin-top:4px}
+  .caught{margin-top:12px; padding:10px 12px; border-radius:9px; font-size:12px; background:color-mix(in oklab,var(--reject) 12%,transparent);
+    border:1px solid color-mix(in oklab,var(--reject) 30%,var(--line)); color:var(--ink); display:none}
+  .caught.show{display:block}
+  .caught b{color:var(--reject)}
+
+  .solo{border:1px solid var(--line); border-radius:12px; padding:14px 15px}
+  .solo .sh{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:10px}
+  .solo-row{display:flex; align-items:center; gap:10px; padding:6px 0}
+  .solo-row .sa{width:24px; height:24px; border-radius:7px; display:grid; place-items:center; font-size:12px; border:1.4px solid; background:var(--panel-2)}
+  .sa.classifier{border-color:var(--classifier)} .sa.fraud{border-color:var(--fraud)} .sa.policy{border-color:var(--policy)}
+  .solo-row .sr-name{font-size:12px; font-weight:550; flex:1}
+  .solo-row .sr-v{font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:6px}
+  .sr-v.approve{background:color-mix(in oklab,var(--approve) 16%,transparent); color:var(--approve)}
+  .sr-v.review{background:color-mix(in oklab,var(--review) 18%,transparent); color:var(--review)}
+  .sr-v.reject{background:color-mix(in oklab,var(--reject) 16%,transparent); color:var(--reject)}
+
+  .evi{border:1px solid var(--line); border-radius:12px; padding:14px 15px}
+  .evi .sh{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:12px}
+  .gauge{display:flex; align-items:center; gap:13px; margin-bottom:12px}
+  .gring{--p:0; width:56px; height:56px; border-radius:50%; flex:none;
+    background:conic-gradient(var(--gc) calc(var(--p)*1%), var(--line) 0);
+    display:grid; place-items:center}
+  .gring::before{content:""; position:absolute; width:42px; height:42px; border-radius:50%; background:var(--panel)}
+  .gring span{position:relative; font-family:var(--mono); font-size:15px; font-weight:650; font-variant-numeric:tabular-nums}
+  .gwrap{position:relative}
+  .gmeta{font-size:11.5px; color:var(--muted)}
+  .gmeta b{color:var(--ink); font-weight:600}
+  .flags{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
+  .flg{font-family:var(--mono); font-size:9.5px; letter-spacing:.05em; padding:2px 7px; border-radius:6px; background:color-mix(in oklab,var(--fraud) 14%,transparent); color:var(--fraud); border:1px solid color-mix(in oklab,var(--fraud) 28%,var(--line))}
+  .roi-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px}
+  .roi-cell{background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:9px 11px}
+  .roi-cell .rl{font-family:var(--mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted)}
+  .roi-cell .rv{font-family:var(--mono); font-size:16px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums}
+  .roi-cell.dup .rv{color:var(--reject)}
+
+  footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
+  footer .legend{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:10px}
+  footer .lg{display:flex; align-items:center; gap:6px}
+  footer .lg i{width:9px; height:9px; border-radius:3px; display:inline-block}
+
+  @media (prefers-reduced-motion: reduce){
+    .turn{animation:none; opacity:1; transform:none}
+    .dot{animation:none}
+  }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">
+      <div class="eyebrow">UiPath AgentHack · Track 1 · Reimbursement</div>
+      <h1>Consensus Engine</h1>
+      <div class="sub">multi-agent claim adjudication — live, on real submissions from the intake form</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="status"><span class="dot"></span> <span id="statusTxt">live — polling real submissions</span></div>
+    <button class="tbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </header>
+
+  <!-- KPI telemetry -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- pipeline -->
+  <section class="card">
+    <div class="hd"><h2>Adjudication pipeline</h2><span class="hint" id="railHint">select a claim to trace it →</span></div>
+    <div class="rail" id="rail"></div>
+  </section>
+
+  <!-- debate -->
+  <section class="card">
+    <div class="tabs" id="tabs">
+      <div class="runall"><button id="runAll">▶ Cycle through claims</button></div>
+    </div>
+    <div class="theater">
+      <div class="left">
+        <div class="blurb" id="blurb"></div>
+        <div class="feed" id="feed"></div>
+      </div>
+      <div class="side" id="side"></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="legend">
+      <span class="lg"><i style="background:var(--classifier)"></i> Cleo · Classifier</span>
+      <span class="lg"><i style="background:var(--fraud)"></i> Rex · Fraud Sentinel</span>
+      <span class="lg"><i style="background:var(--policy)"></i> Pola · Policy Arbiter</span>
+    </div>
+    <div id="footNote"></div>
+  </footer>
+</div>
+
+<script>
+let DATA = {
+  generated_by: "waiting for the first real submission…",
+  totals: {cases:0, operational_saved_usd:0, duplicate_loss_prevented:0, minutes_saved:0,
+            hours_saved:0, duplicates_caught:0, splits_caught:0, auto_approved:0,
+            sent_to_human:0, rejected:0},
+  cases: []
+};
+let selectedIndex = 0;
+
+// ---- render engine (was missing — DATA above was embedded but never painted) ----
+function vclass(rec){
+  if(rec==='AUTO_APPROVE'||rec==='PROCEED') return 'approve';
+  if(rec==='HITL_REVIEW') return 'review';
+  return 'reject';
+}
+function soloClass(v){
+  if(v==='auto_approve'||v==='proceed') return 'approve';
+  if(v==='manager_review'||v==='escalate') return 'review';
+  return 'reject';
+}
+function mdText(s){
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/@(\w+)/g,'<span class="men">@$1</span>');
+}
+const AGENT_META = {
+  classifier:{name:'Cleo', role:'Classifier'},
+  fraud:{name:'Rex', role:'Fraud Sentinel'},
+  policy:{name:'Pola', role:'Policy Arbiter'}
+};
+const AGENT_ICON = {classifier:'🧠', fraud:'🛡️', policy:'⚖️'};
+
+const STAGES = [
+  {k:'intake',  icon:'📥', name:'Intake'},
+  {k:'extract', icon:'📄', name:'Extract'},
+  {k:'classify',icon:'🧠', name:'Classify'},
+  {k:'fraud',   icon:'🛡️', name:'Fraud'},
+  {k:'policy',  icon:'⚖️', name:'Policy'},
+  {k:'consensus',icon:'🤝', name:'Consensus'},
+  {k:'review',  icon:'👤', name:'Review'},
+  {k:'outcome', icon:'✅', name:'Outcome'}
+];
+
+function renderKPIs(){
+  const t = DATA.totals;
+  const items = [
+    {label:'Claims processed', val:t.cases, sub:'this session'},
+    {label:'Auto-approved',    val:t.auto_approved, sub:'straight-through'},
+    {label:'Sent to human',    val:t.sent_to_human, sub:'HITL review', cls:'accent-hr'},
+    {label:'Rejected',         val:t.rejected, sub:'blocked by consensus'},
+    {label:'Duplicate $ caught', val:'$'+t.duplicate_loss_prevented.toFixed(2), sub:t.duplicates_caught+' duplicate(s) blocked', cls:'accent-dup'},
+    {label:'Hours saved',      val:t.hours_saved.toFixed(1)+'h', sub:'$'+t.operational_saved_usd.toFixed(0)+' op. cost saved', cls:'accent-save'}
+  ];
+  document.getElementById('kpis').innerHTML = items.map(it => `
+    <div class="kpi ${it.cls||''}">
+      <div class="k-label">${it.label}</div>
+      <div class="k-val">${it.val}</div>
+      <div class="k-sub">${it.sub}</div>
+    </div>`).join('');
+}
+
+function renderRail(c){
+  const path = c.path;
+  const outcomeColor = path==='reject' ? 'var(--reject)' : path==='hitl_review' ? 'var(--review)' : 'var(--approve)';
+  const outcomeIcon   = path==='reject' ? '⛔' : path==='hitl_review' ? '👤' : '✅';
+  document.getElementById('rail').innerHTML = STAGES.map(s=>{
+    const isReview = s.k==='review';
+    const skipReview = isReview && path!=='hitl_review';
+    let cls = 'stage';
+    if(s.k==='consensus') cls += ' consensus';
+    if(!skipReview) cls += ' done';
+    const icon = s.k==='outcome' ? outcomeIcon : s.icon;
+    const style = s.k==='outcome' ? ` style="border-color:${outcomeColor}"` : '';
+    return `<div class="${cls}">
+      <div class="node"${style}>${skipReview ? '·' : icon}</div>
+      <div class="s-name">${s.name}</div>
+      ${s.k==='consensus' ? '<div class="consensus-bracket">verdict</div>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderTabs(){
+  const wrap = document.getElementById('tabs');
+  const html = DATA.cases.map((c,i) => `
+    <div class="tab" data-i="${i}" id="tab-${i}">
+      <span class="t-idx">${String(i+1).padStart(2,'0')}</span>
+      <span class="t-title">${c.case_id}</span>
+      <span class="chip ${vclass(c.recommendation)}">${c.recommendation.replace('_',' ')}</span>
+    </div>`).join('');
+  wrap.insertAdjacentHTML('afterbegin', html);
+  wrap.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => select(+t.dataset.i)));
+}
+
+function renderFeed(c){
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '';
+  let lastRound = null;
+  c.transcript.forEach((turn, idx) => {
+    if(turn.round !== lastRound){
+      lastRound = turn.round;
+      const div = document.createElement('div');
+      div.className = 'round-div';
+      div.textContent = 'Round ' + turn.round;
+      feed.appendChild(div);
+    }
+    const el = document.createElement('div');
+    el.className = 'turn';
+    el.style.animationDelay = (idx*0.06) + 's';
+    el.innerHTML = `
+      <div class="av ${turn.speaker_id}">${turn.avatar}</div>
+      <div class="bubble">
+        <div class="bwho">
+          <span class="nm">${turn.speaker}</span>
+          <span class="rl">${turn.role}</span>
+          <span class="stance ${turn.stance}">${turn.stance}</span>
+        </div>
+        <div class="btext">${mdText(turn.text)}</div>
+      </div>`;
+    feed.appendChild(el);
+  });
+}
+
+function caughtText(c){
+  const fraud = c.evidence.fraud;
+  if(c.savings.duplicate_caught){
+    const dup = (fraud.flags||[]).find(f => f.code==='DUPLICATE');
+    return '<b>Duplicate caught</b> — ' + (dup ? dup.detail : 'a matching earlier claim was found — prevented a double-payment.');
+  }
+  if(fraud.split_claim_detected){
+    return '<b>Split claim caught</b> — sub-threshold claims to the same vendor summed above the approval limit.';
+  }
+  return '';
+}
+
+function renderSide(c){
+  const side = document.getElementById('side');
+  const fraud = c.evidence.fraud;
+  const sv = c.savings;
+  const caught = caughtText(c);
+  const gaugeColor = fraud.integrity_risk==='High' ? 'var(--reject)' : fraud.integrity_risk==='Medium' ? 'var(--review)' : 'var(--approve)';
+  const flags = (fraud.flags||[]).length
+    ? fraud.flags.map(f => `<span class="flg" title="${(f.detail||'').replace(/"/g,'&quot;')}">${f.code}</span>`).join('')
+    : '<span class="flg" style="opacity:.5;color:var(--muted);background:transparent;border-color:var(--line)">none</span>';
+  const soloRows = Object.entries(c.solo_verdicts).map(([who,v]) => {
+    const meta = AGENT_META[who] || {name:who, role:who};
+    return `<div class="solo-row">
+      <div class="sa ${who}">${AGENT_ICON[who]||'•'}</div>
+      <div class="sr-name">${meta.name} · ${meta.role}</div>
+      <div class="sr-v ${soloClass(v)}">${String(v).replace('_',' ')}</div>
+    </div>`;
+  }).join('');
+
+  side.innerHTML = `
+    <div class="verdict ${vclass(c.recommendation)}">
+      <div class="vlabel">Consensus verdict</div>
+      <div class="vmain">${c.recommendation.replace('_',' ')}</div>
+      <div class="vrat">${c.rationale}</div>
+      <div class="caught ${caught ? 'show' : ''}">${caught}</div>
+    </div>
+    <div class="solo">
+      <div class="sh">If each agent ruled alone</div>
+      ${soloRows}
+    </div>
+    <div class="evi">
+      <div class="sh">Fraud evidence</div>
+      <div class="gauge">
+        <div class="gwrap"><div class="gring" style="--p:${fraud.fraud_score};--gc:${gaugeColor}"><span>${fraud.fraud_score}</span></div></div>
+        <div class="gmeta">Integrity risk: <b>${fraud.integrity_risk}</b><br>Recommendation: <b>${fraud.recommendation}</b></div>
+      </div>
+      <div class="flags">${flags}</div>
+      <div class="roi-grid">
+        <div class="roi-cell"><div class="rl">Op. cost saved</div><div class="rv">$${sv.operational_saved_usd.toFixed(2)}</div></div>
+        <div class="roi-cell"><div class="rl">Minutes saved</div><div class="rv">${sv.minutes_saved}</div></div>
+        <div class="roi-cell dup"><div class="rl">Dup. prevented</div><div class="rv">$${sv.duplicate_loss_prevented.toFixed(2)}</div></div>
+        <div class="roi-cell"><div class="rl">Discount capt.</div><div class="rv">$${sv.discount_captured.toFixed(2)}</div></div>
+      </div>
+    </div>`;
+}
+
+function select(i){
+  const c = DATA.cases[i];
+  if(!c) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', +t.dataset.i===i));
+  document.getElementById('railHint').textContent = c.case_id + ' — ' + c.title;
+  renderRail(c);
+  document.getElementById('blurb').textContent = c.blurb;
+  renderFeed(c);
+  renderSide(c);
+}
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', root.getAttribute('data-theme')==='dark' ? 'light' : 'dark');
+});
+
+document.getElementById('runAll').addEventListener('click', async () => {
+  const btn = document.getElementById('runAll');
+  btn.disabled = true;
+  for(let i=0;i<DATA.cases.length;i++){
+    select(i);
+    await new Promise(r => setTimeout(r, 2200));
+  }
+  btn.disabled = false;
+});
+
+async function loadData(){
+  try {
+    const r = await fetch('/api/debates', {cache: 'no-store'});
+    if(!r.ok) return;
+    const d = await r.json();
+    const hadCases = DATA.cases.length;
+    const prevCaseId = DATA.cases[selectedIndex] ? DATA.cases[selectedIndex].case_id : null;
+    DATA = d;
+    renderKPIs();
+    renderTabs();
+    document.getElementById('statusTxt').textContent =
+      DATA.cases.length ? `live — ${DATA.cases.length} claim(s) adjudicated` : 'live — waiting for the first submission';
+    if (DATA.cases.length){
+      // keep following the same case across a refresh if it still exists,
+      // otherwise (new newest-first case landed) jump to the newest one.
+      const stillThere = prevCaseId && DATA.cases.findIndex(c => c.case_id === prevCaseId);
+      selectedIndex = (stillThere !== null && stillThere >= 0) ? stillThere : 0;
+      select(selectedIndex);
+    } else if (!hadCases) {
+      document.getElementById('blurb').textContent = 'No real submissions yet — submit the intake form to see a live debate here.';
+    }
+  } catch(e) {
+    console.error('[live console] poll failed', e);
+  }
+}
+
+document.getElementById('footNote').innerHTML=
+  'Every claim above came through the real intake form and was scored by the actual deployed '+
+  'Orchestrator processes — FraudIntegrityAgent, the Classify agent, PolicyRuleCheckWorkflow, and '+
+  'ConsensusArbitrationWorkflow. No figures are hand-authored or simulated; this page polls '+
+  '/api/debates every 8s.';
+
+renderKPIs();
+renderTabs();
+loadData();
+setInterval(loadData, 8000);
+</script>
+</body>
+</html>

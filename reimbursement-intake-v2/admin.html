@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reimbursement Ops — Admin Panel</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580;
+    --approve:#2dd4a7; --review:#f5a524; --reject:#f0475f;
+    --accent:#38bdf8;
+    --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+    --radius:14px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono","Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+      --ink:#141a26; --muted:#5a6478; --faint:#97a0b3;
+      --grid:rgba(15,25,45,.03);
+      --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580; --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+    --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+    --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:44px 44px;
+  }
+  .wrap{max-width:1760px; margin:0 auto; padding:26px 22px 72px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted)}
+
+  header.bar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:22px}
+  .brand{display:flex; flex-direction:column; gap:3px}
+  .brand h1{margin:0; font-size:20px; letter-spacing:-.01em; font-weight:650}
+  .brand .sub{font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.02em}
+  .bar .spacer{flex:1}
+  .status{display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted);
+    background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:7px 13px}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--approve); box-shadow:0 0 0 0 rgba(45,212,167,.5); animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,167,.45)}70%{box-shadow:0 0 0 7px rgba(45,212,167,0)}100%{box-shadow:0 0 0 0 rgba(45,212,167,0)}}
+  .navlink{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent);
+    text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:7px 13px; background:var(--panel)}
+  .navlink:hover{border-color:var(--accent)}
+  .tbtn{background:var(--panel); border:1px solid var(--line); color:var(--muted); border-radius:999px; width:38px; height:38px;
+    cursor:pointer; font-size:15px; display:grid; place-items:center}
+  .tbtn:hover{color:var(--ink); border-color:var(--faint)}
+
+  .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:22px}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px; box-shadow:var(--shadow)}
+  .kpi .k-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted)}
+  .kpi .k-val{font-family:var(--mono); font-size:26px; font-weight:600; margin-top:8px; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .kpi .k-sub{font-size:11px; color:var(--faint); margin-top:2px}
+  .kpi.accent-dup .k-val{color:var(--reject)} .kpi.accent-save .k-val{color:var(--approve)} .kpi.accent-hr .k-val{color:var(--accent)}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.kpis{grid-template-columns:repeat(2,1fr)}}
+
+  /* Auto-flowing grid — cards distribute across however many columns fit
+     the viewport (1 on mobile, up to 4+ on a wide monitor) instead of a
+     fixed 2-column split that leaves one side sparse when card counts
+     are uneven between columns. */
+  .grid2{display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:16px; align-items:start}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:0}
+  .card .hd{display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line)}
+  .card .hd h2{margin:0; font-size:13px; font-weight:600; letter-spacing:.01em}
+  .card .hd .hint{font-family:var(--mono); font-size:11px; color:var(--faint); margin-left:auto}
+  .card .body{padding:6px 18px 16px}
+  .empty{padding:20px 2px; color:var(--faint); font-size:12.5px; font-family:var(--mono)}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px}
+  thead th{text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line)}
+  tbody td{padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:var(--panel-2)}
+  td.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  .chip{font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; padding:2px 7px; border-radius:6px; text-transform:uppercase; display:inline-block}
+  .chip.approve,.chip.successful,.chip.paid{background:color-mix(in oklab,var(--approve) 18%,transparent); color:var(--approve)}
+  .chip.review,.chip.pending,.chip.pending_review,.chip.running{background:color-mix(in oklab,var(--review) 20%,transparent); color:var(--review)}
+  .chip.reject,.chip.faulted,.chip.rejected,.chip.stopped,.chip.stopping,.chip.terminating{background:color-mix(in oklab,var(--reject) 18%,transparent); color:var(--reject)}
+
+  .dl{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--accent); text-decoration:none;
+    border:1px solid var(--line); border-radius:7px; padding:5px 10px; white-space:nowrap}
+  .dl:hover{border-color:var(--accent)}
+
+  td.actions{white-space:nowrap}
+  td.actions button{font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase;
+    border-radius:7px; padding:5px 9px; margin-right:6px; cursor:pointer; border:1px solid transparent; background:transparent}
+  td.actions button:disabled{opacity:.5; cursor:default}
+  td.actions .btn-approve{border-color:var(--approve); color:var(--approve)}
+  td.actions .btn-approve:hover:not(:disabled){background:color-mix(in oklab,var(--approve) 16%,transparent)}
+  td.actions .btn-reject{border-color:var(--reject); color:var(--reject)}
+  td.actions .btn-reject:hover:not(:disabled){background:color-mix(in oklab,var(--reject) 16%,transparent)}
+
+  .health-row{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line)}
+  .health-row:last-child{border-bottom:0}
+  .health-row .name{flex:1; font-size:12.5px; font-weight:550}
+  .health-bar{display:flex; height:8px; border-radius:5px; overflow:hidden; width:140px; background:var(--panel-2)}
+  .health-bar span{height:100%}
+
+  footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">
+      <div class="eyebrow">UiPath AgentHack · Track 1 · Reimbursement</div>
+      <h1>Admin / Ops Panel</h1>
+      <div class="sub">live Orchestrator state — no Studio Web needed</div>
+    </div>
+    <div class="spacer"></div>
+    <a class="navlink" href="/dashboard" target="_blank" rel="noopener">Debate console →</a>
+    <div class="status"><span class="dot"></span> <span id="statusTxt">connecting…</span></div>
+    <button class="tbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </header>
+
+  <div id="errBanner" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:10px; border:1px solid var(--reject); background:color-mix(in oklab,var(--reject) 12%,transparent); font-family:var(--mono); font-size:12px; color:var(--reject); white-space:pre-wrap; word-break:break-word;"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid2">
+    <section class="card">
+      <div class="hd"><h2>Case audit log</h2><span class="hint">every decision, exportable</span></div>
+      <div class="body"><div id="auditTbl"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><h2>Process health</h2><span class="hint" id="folderHint"></span></div>
+      <div class="body"><div id="healthList"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><h2>Deployed releases</h2><span class="hint">Shared/ReimbursementFullSolution</span></div>
+      <div class="body"><div id="releasesTbl"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><h2>Recent jobs</h2><span class="hint">last 15</span></div>
+      <div class="body"><div id="jobsTbl"></div></div>
+    </section>
+  </div>
+
+  <footer>
+    Reads live from Orchestrator (Jobs/Releases OData) and the in-memory debate/HITL state of this
+    service — nothing here is hand-authored or cached beyond the poll interval. Polls every 10s.
+  </footer>
+</div>
+
+<script>
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtMoney(n){ return '$' + Number(n||0).toFixed(2); }
+function fmtTime(s){
+  if(!s) return '—';
+  const d = new Date(s);
+  return isNaN(d) ? esc(s) : d.toLocaleTimeString();
+}
+function pathChip(path){
+  const cls = (path==='reject'||path==='faulted'||path==='stopped') ? 'reject'
+            : (path==='hitl_review'||path==='in_progress') ? 'review'
+            : 'approve';
+  return `<span class="chip ${cls}">${esc((path||'').replace(/_/g,' '))}</span>`;
+}
+function stateChip(state){
+  const s = (state||'').toLowerCase();
+  return `<span class="chip ${s}">${esc(state||'—')}</span>`;
+}
+
+function renderKPIs(totals, pendingCount){
+  const t = totals || {};
+  const items = [
+    {label:'Claims processed', val:t.cases||0, sub:'paid + rejected + in review'},
+    {label:'Approved & paid',  val:t.auto_approved||0, sub:'Stripe payouts fired'},
+    {label:'Awaiting review',  val:pendingCount||0, sub:'pending human decision', cls:'accent-hr'},
+    {label:'Rejected',         val:t.rejected||0, sub:'policy / consensus reject'},
+    {label:'Duplicate $ caught', val:fmtMoney(t.duplicate_loss_prevented), sub:(t.duplicates_caught||0)+' duplicate(s) blocked', cls:'accent-dup'},
+    {label:'Hours saved',      val:(t.hours_saved||0).toFixed?(t.hours_saved).toFixed(1)+'h':'0h', sub:fmtMoney(t.operational_saved_usd)+' op. cost saved', cls:'accent-save'}
+  ];
+  document.getElementById('kpis').innerHTML = items.map(it => `
+    <div class="kpi ${it.cls||''}">
+      <div class="k-label">${it.label}</div>
+      <div class="k-val">${it.val}</div>
+      <div class="k-sub">${it.sub}</div>
+    </div>`).join('');
+}
+
+function renderAudit(cases){
+  const el = document.getElementById('auditTbl');
+  if(!cases.length){ el.innerHTML = '<div class="empty">No case runs in this folder yet.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Case</th><th>Verdict</th><th>Outcome</th><th>Submitted</th><th></th></tr></thead><tbody>
+    ${cases.map(c => `<tr>
+      <td>${esc(c.title||c.case_id)}</td>
+      <td>${pathChip(c.path)}</td>
+      <td>${stateChip((c.action||{}).status)}</td>
+      <td class="mono">${c.submitted_at ? new Date(c.submitted_at*1000).toLocaleString() : '—'}</td>
+      <td><a class="dl" href="/api/audit/${encodeURIComponent(c.case_id)}" download>⬇ audit.json</a></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderHealth(jobHealth){
+  const el = document.getElementById('healthList');
+  const names = Object.keys(jobHealth||{});
+  if(!names.length){ el.innerHTML = '<div class="empty">No recent jobs in this folder.</div>'; return; }
+  el.innerHTML = names.map(name => {
+    const states = jobHealth[name];
+    const total = Object.values(states).reduce((a,b)=>a+b,0) || 1;
+    const colorFor = s => s==='Successful' ? 'var(--approve)' : (s==='Faulted'||s==='Stopped') ? 'var(--reject)' : 'var(--review)';
+    const bars = Object.entries(states).map(([s,n]) =>
+      `<span style="width:${(n/total*100)}%; background:${colorFor(s)}" title="${s}: ${n}"></span>`).join('');
+    const summary = Object.entries(states).map(([s,n]) => `${n} ${s}`).join(' · ');
+    return `<div class="health-row">
+      <div class="name">${esc(name)}</div>
+      <div class="health-bar">${bars}</div>
+      <div class="mono" style="font-size:11px;color:var(--muted);min-width:140px;text-align:right">${esc(summary)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderReleases(releases){
+  const el = document.getElementById('releasesTbl');
+  if(!releases.length){ el.innerHTML = '<div class="empty">No releases found.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Process</th><th>Version</th></tr></thead><tbody>
+    ${releases.map(r => `<tr><td>${esc(r.Name)}</td><td class="mono">${esc(r.ProcessVersion)}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderJobs(jobs){
+  const el = document.getElementById('jobsTbl');
+  if(!jobs.length){ el.innerHTML = '<div class="empty">No recent jobs.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Process</th><th>State</th><th>Started</th></tr></thead><tbody>
+    ${jobs.slice(0,15).map(j => `<tr>
+      <td>${esc(j.ReleaseName||'—')}</td>
+      <td>${stateChip(j.State)}</td>
+      <td class="mono">${fmtTime(j.StartTime)}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function showError(msg){
+  const el = document.getElementById('errBanner');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+function clearError(){
+  document.getElementById('errBanner').style.display = 'none';
+}
+
+async function loadAll(){
+  const statusEl = document.getElementById('statusTxt');
+  try {
+    const ovR = await fetch('/api/admin/overview', {cache:'no-store'});
+    if(ovR.ok){
+      const ov = await ovR.json();
+      renderKPIs(ov.totals, ov.pending_hitl_count);
+      renderHealth(ov.job_health);
+      renderReleases(ov.releases||[]);
+      renderJobs(ov.recent_jobs||[]);
+      renderAudit(ov.audit||[]);
+      document.getElementById('folderHint').textContent = 'folder ' + ov.folder_id;
+      statusEl.textContent = 'live — ' + (ov.recent_jobs||[]).length + ' recent job(s)';
+      clearError();
+    } else if(ovR.status === 401){
+      statusEl.textContent = 'auth error (401) — re-check admin credentials';
+      clearError();
+    } else {
+      const body = await ovR.text().catch(() => '');
+      statusEl.textContent = `overview failed (HTTP ${ovR.status})`;
+      console.error('[admin] overview failed', ovR.status, body);
+      showError(`/api/admin/overview → HTTP ${ovR.status}\n${body.slice(0, 500)}`);
+    }
+  } catch(e){
+    console.error('[admin] poll failed', e);
+    statusEl.textContent = 'connection error — retrying';
+    showError(`loadAll() threw: ${e.message || e}`);
+  }
+}
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', root.getAttribute('data-theme')==='dark' ? 'light' : 'dark');
+});
+
+loadAll();
+setInterval(loadAll, 10000);
+</script>
+</body>
+</html>
