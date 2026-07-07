@@ -76,6 +76,70 @@ a job faults or a release key drifts — so the dashboard never goes dark:
 - The intake success screen shows a **live case timeline** driven off the real
   MirCaseClone stage cursor.
 
+![Consensus Engine — live multi-agent debate](docs/screenshots/05-consensus-engine.png)
+
+---
+
+## Version 2 Improvements
+
+Version 1 proved the automation worked end-to-end. Version 2 is a set of
+improvements driven by real feedback — from users, from our own team, and from
+mentors — closing the gaps between "it works" and "it's actually good to use."
+
+### 1. Receiver Email Notification
+
+Version 1 worked — claims got processed. But feedback kept saying the same
+thing: the person a claim reached had no idea it had arrived until they
+happened to check. So version 2 fixed it — the moment a claim reaches the
+concerned person, they get an automatic email. No manual follow-up, no "did
+you get my claim?" pings. A small addition on paper, but it came straight from
+real users, and it's the difference between an automation that technically
+works and one that actually removes friction for the people using it.
+
+![Receiver email notification](docs/screenshots/01-receiver-email.png)
+
+### 2. Live Status Tracker for the Submitter
+
+Once someone submitted a claim in version 1, it disappeared into the system.
+This one came from the team's own internal discussion — we asked ourselves: if
+I submitted this claim, wouldn't I want to know where it is right now? That
+became the live tracker in version 2: the submitter can check, in real time,
+exactly where their claim stands — submitted, under review, approved, paid
+out. Some of the best improvements don't come from bug reports — they come
+from honestly asking what the experience is missing.
+
+![Live status tracker](docs/screenshots/02-live-tracker.png)
+
+### 3. Customized Human-in-the-Loop Approval Email
+
+In version 1, the human review step was clunky — reviewers had to dig through
+the system to find what they were even supposed to approve or reject. The push
+to fix this came from a mentor's feedback, which changed how we thought about
+the whole thing. Version 2 gives reviewers a custom email built for that exact
+decision — the context is already there, with a simple Approve/Reject action.
+We didn't try to remove humans from the loop; some decisions need a person's
+judgment. We just made it effortless for that person to make the call quickly,
+instead of hunting for information first.
+
+![HITL approval email](docs/screenshots/03-hitl-email.png)
+
+### 4. Manager/Director Dashboard
+
+Version 1 proved the automation worked. What it couldn't do was answer the
+question leadership actually cares about: is this saving us anything? A
+mentor's feedback reshaped our thinking here — that a working automation means
+little if you can't show the value behind it. That lesson became the admin
+dashboard in version 2, built for managers and directors, tracking:
+
+- Total number of claims processed
+- Time saved vs. the manual process
+- Estimated FTE (people-hours) saved
+- Overall business ROI
+
+It turned "we built something cool" into "here's the number behind it."
+
+![Manager/director dashboard](docs/screenshots/04-admin-dashboard.png)
+
 ---
 
 ## Tech
