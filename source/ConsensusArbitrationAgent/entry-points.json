@@ -1,0 +1,206 @@
+{
+    "$schema": "https://cloud.uipath.com/draft/2024-12/entry-point",
+    "$id": "entry-points.json",
+    "entryPoints": [
+        {
+            "filePath": "agent",
+            "uniqueId": "db79718f-c917-4deb-b691-519335803117",
+            "type": "agent",
+            "input": {
+                "type": "object",
+                "properties": {
+                    "case_id": {
+                        "default": "",
+                        "description": "Maestro case ID of the claim under arbitration",
+                        "title": "Case Id",
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "default": "",
+                        "description": "Vendor / merchant on the claim (context)",
+                        "title": "Vendor",
+                        "type": "string"
+                    },
+                    "amount": {
+                        "default": 0.0,
+                        "description": "Claimed amount (context)",
+                        "title": "Amount",
+                        "type": "number"
+                    },
+                    "currency": {
+                        "default": "USD",
+                        "description": "ISO currency code (context)",
+                        "title": "Currency",
+                        "type": "string"
+                    },
+                    "expense_type": {
+                        "default": "",
+                        "description": "Classified expense type (context)",
+                        "title": "Expense Type",
+                        "type": "string"
+                    },
+                    "classification_confidence": {
+                        "default": "Medium",
+                        "description": "Classifier confidence: Low | Medium | High",
+                        "title": "Classification Confidence",
+                        "type": "string"
+                    },
+                    "risk_score": {
+                        "default": "Low",
+                        "description": "Classifier risk band: Low | Medium | High",
+                        "title": "Risk Score",
+                        "type": "string"
+                    },
+                    "fraud_score": {
+                        "default": 0,
+                        "description": "Fraud score 0-100",
+                        "title": "Fraud Score",
+                        "type": "integer"
+                    },
+                    "integrity_risk": {
+                        "default": "Low",
+                        "description": "Fraud risk band: Low | Medium | High",
+                        "title": "Integrity Risk",
+                        "type": "string"
+                    },
+                    "fraud_recommendation": {
+                        "default": "proceed",
+                        "description": "Fraud call: proceed | review | reject",
+                        "title": "Fraud Recommendation",
+                        "type": "string"
+                    },
+                    "duplicate_detected": {
+                        "default": false,
+                        "description": "A confirmed duplicate of a prior claim",
+                        "title": "Duplicate Detected",
+                        "type": "boolean"
+                    },
+                    "split_claim_detected": {
+                        "default": false,
+                        "description": "A split-claim pattern dodging the approval limit",
+                        "title": "Split Claim Detected",
+                        "type": "boolean"
+                    },
+                    "within_spend_limit": {
+                        "default": true,
+                        "description": "Amount is within the category spend limit",
+                        "title": "Within Spend Limit",
+                        "type": "boolean"
+                    },
+                    "policy_routing": {
+                        "default": "auto_approve",
+                        "description": "Policy routing: auto_approve | manager_review | reject",
+                        "title": "Policy Routing",
+                        "type": "string"
+                    },
+                    "policy_violations": {
+                        "description": "Named policy violations, if any",
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Policy Violations",
+                        "type": "array"
+                    },
+                    "spend_limit": {
+                        "default": 0.0,
+                        "description": "Category spend limit (context)",
+                        "title": "Spend Limit",
+                        "type": "number"
+                    },
+                    "auto_approve_threshold": {
+                        "default": 0.0,
+                        "description": "Category auto-approve threshold (context)",
+                        "title": "Auto Approve Threshold",
+                        "type": "number"
+                    }
+                },
+                "required": []
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "recommendation": {
+                        "default": "PROCEED_REVIEWED",
+                        "title": "Recommendation",
+                        "type": "string"
+                    },
+                    "path": {
+                        "default": "proceed",
+                        "title": "Path",
+                        "type": "string"
+                    },
+                    "rationale": {
+                        "default": "",
+                        "title": "Rationale",
+                        "type": "string"
+                    },
+                    "decided_by": {
+                        "default": "deterministic",
+                        "title": "Decided By",
+                        "type": "string"
+                    },
+                    "escalated": {
+                        "default": false,
+                        "title": "Escalated",
+                        "type": "boolean"
+                    },
+                    "audit": {
+                        "additionalProperties": true,
+                        "title": "Audit",
+                        "type": "object"
+                    }
+                },
+                "required": []
+            },
+            "graph": {
+                "nodes": [
+                    {
+                        "id": "__start__",
+                        "name": "__start__",
+                        "type": "__start__",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "baseline",
+                        "name": "baseline",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "decide",
+                        "name": "decide",
+                        "type": "node",
+                        "subgraph": null,
+                        "metadata": {}
+                    },
+                    {
+                        "id": "__end__",
+                        "name": "__end__",
+                        "type": "__end__",
+                        "subgraph": null,
+                        "metadata": {}
+                    }
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "baseline",
+                        "label": null
+                    },
+                    {
+                        "source": "baseline",
+                        "target": "decide",
+                        "label": null
+                    },
+                    {
+                        "source": "decide",
+                        "target": "__end__",
+                        "label": null
+                    }
+                ]
+            }
+        }
+    ]
+}

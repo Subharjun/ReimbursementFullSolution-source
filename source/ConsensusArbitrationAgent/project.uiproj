@@ -1,0 +1,6 @@
+{
+  "ProjectType": "Agent",
+  "Name": "ConsensusArbitrationAgent",
+  "Description": "AgentHack - final reimbursement consensus arbitration (LangGraph agent, LLM judgment under hard compliance guardrails)",
+  "MainFile": null
+}

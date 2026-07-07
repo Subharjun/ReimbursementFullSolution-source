@@ -62,7 +62,7 @@
     cursor:pointer; font-size:15px; display:grid; place-items:center}
   .tbtn:hover{color:var(--ink); border-color:var(--faint)}
 
-  .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:22px}
+  .kpis{display:grid; grid-template-columns:repeat(7,1fr); gap:12px; margin-bottom:22px}
   .kpi{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px; box-shadow:var(--shadow)}
   .kpi .k-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted)}
   .kpi .k-val{font-family:var(--mono); font-size:26px; font-weight:600; margin-top:8px; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
@@ -184,13 +184,17 @@ function stateChip(state){
   return `<span class="chip ${s}">${esc(state||'—')}</span>`;
 }
 
-function renderKPIs(totals, pendingCount){
+function renderKPIs(totals, pendingCount, agreement){
   const t = totals || {};
+  const a = agreement || {};
+  const agrVal = (a.agreement_rate==null) ? '—' : a.agreement_rate.toFixed(1)+'%';
+  const agrSub = (a.scored||0) ? `${a.agreed}/${a.scored} reviews upheld the AI` : 'no scored reviews yet';
   const items = [
     {label:'Claims processed', val:t.cases||0, sub:'paid + rejected + in review'},
     {label:'Approved & paid',  val:t.auto_approved||0, sub:'Stripe payouts fired'},
     {label:'Awaiting review',  val:pendingCount||0, sub:'pending human decision', cls:'accent-hr'},
     {label:'Rejected',         val:t.rejected||0, sub:'policy / consensus reject'},
+    {label:'AI↔Human agreement', val:agrVal, sub:agrSub, cls:'accent-save'},
     {label:'Duplicate $ caught', val:fmtMoney(t.duplicate_loss_prevented), sub:(t.duplicates_caught||0)+' duplicate(s) blocked', cls:'accent-dup'},
     {label:'Hours saved',      val:(t.hours_saved||0).toFixed?(t.hours_saved).toFixed(1)+'h':'0h', sub:fmtMoney(t.operational_saved_usd)+' op. cost saved', cls:'accent-save'}
   ];
@@ -270,7 +274,7 @@ async function loadAll(){
     const ovR = await fetch('/api/admin/overview', {cache:'no-store'});
     if(ovR.ok){
       const ov = await ovR.json();
-      renderKPIs(ov.totals, ov.pending_hitl_count);
+      renderKPIs(ov.totals, ov.pending_hitl_count, ov.agreement);
       renderHealth(ov.job_health);
       renderReleases(ov.releases||[]);
       renderJobs(ov.recent_jobs||[]);

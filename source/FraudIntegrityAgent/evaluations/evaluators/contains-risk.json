@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "id": "ContainsRiskEvaluator",
+  "evaluatorTypeId": "uipath-contains",
+  "description": "Checks the deterministic integrity_risk band matches the expected verdict (LLM prose is not scored).",
+  "evaluatorConfig": {
+    "name": "ContainsRiskEvaluator",
+    "targetOutputKey": "integrity_risk"
+  }
+}

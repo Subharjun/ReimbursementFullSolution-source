@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "id": "smoke-test",
+  "name": "FraudIntegrityAgent Smoke Test",
+  "evaluatorRefs": ["ContainsRiskEvaluator"],
+  "evaluations": [
+    {
+      "id": "test-1-clean-proceed",
+      "name": "Clean claim, no history -> Low",
+      "inputs": {
+        "case_id": "1085",
+        "employee_email": "asha@acme.com",
+        "employee_name": "Asha Rao",
+        "vendor": "Pita Pita",
+        "amount": 228.92,
+        "currency": "USD",
+        "date": "2017-05-04",
+        "expense_type": "food",
+        "claim_history": []
+      },
+      "evaluationCriterias": {
+        "ContainsRiskEvaluator": { "searchText": "Low" }
+      }
+    },
+    {
+      "id": "test-2-duplicate-high",
+      "name": "Duplicate resubmission -> High",
+      "inputs": {
+        "case_id": "2090",
+        "employee_email": "asha@acme.com",
+        "employee_name": "Asha Rao",
+        "vendor": "Hotel Grand",
+        "amount": 228.92,
+        "currency": "USD",
+        "date": "2026-06-04",
+        "expense_type": "travel",
+        "claim_history": [
+          { "vendor": "Hotel Grand", "amount": 228.92, "date": "2026-06-01", "employee_email": "asha@acme.com", "case_id": "OLD-77" }
+        ]
+      },
+      "evaluationCriterias": {
+        "ContainsRiskEvaluator": { "searchText": "High" }
+      }
+    }
+  ]
+}

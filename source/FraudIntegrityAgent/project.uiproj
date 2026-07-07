@@ -1,0 +1,6 @@
+{
+  "ProjectType": "Agent",
+  "Name": "FraudIntegrityAgent",
+  "Description": "AgentHack - reimbursement fraud / integrity screening (LangGraph agent)",
+  "MainFile": null
+}

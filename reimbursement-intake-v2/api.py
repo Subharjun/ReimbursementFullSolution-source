@@ -225,6 +225,28 @@ HITL_DECISION_EMAIL = os.getenv("HITL_DECISION_EMAIL", "subharjun.bose2805@gmail
 _HITL_WATCH_TIMEOUT_S = 480
 _HITL_WATCH_INTERVAL_S = 8
 
+# Reviewer Approve/Reject email delivery path.
+#   0 (default) -> legacy direct Gmail send (_send_gmail). Works locally with a
+#      user token; on Render the app's client-credentials token is NOT authorized
+#      for the direct Integration Service SendEmail call (401) so the mail never
+#      goes out — the same failure that hit the manager mail before it was moved
+#      to a job.
+#   1 -> send the reviewer email from INSIDE a SubmissionConfirmationAgent job
+#      (audience='reviewer'), the in-context Gmail path that delivers on Render.
+#      REQUIRES the agent to support audience='reviewer' + review_link, i.e. the
+#      3.18.1 -> 3.18.2 agent redeploy. Leave OFF until that redeploy is live,
+#      then flip UIPATH_REVIEWER_MAIL_VIA_AGENT=1 on Render.
+REVIEWER_MAIL_VIA_AGENT = os.getenv("UIPATH_REVIEWER_MAIL_VIA_AGENT", "0") == "1"
+
+# Action Center task deep link. Used as the Render-safe fallback when the Maestro
+# element-executions trail (which carries the authoritative externalLink) is not
+# reachable by the app token. Env-overridable so the exact URL shape can be
+# corrected without a code change. {task_id} is substituted per task.
+ACTION_CENTER_TASK_URL_TMPL = os.getenv(
+    "UIPATH_ACTION_CENTER_TASK_URL_TMPL",
+    f"{UIPATH_BASE_URL}/actions_/tasks/{{task_id}}",
+)
+
 
 async def _send_gmail(to: str, subject: str, body_html: str, folder_key: str = "a1dc9c4b-4ba4-4ac1-837d-9c6b093457a3") -> str:
     """Send (not draft) an email via the tenant's real Gmail IS connection.
@@ -258,6 +280,31 @@ async def _send_gmail(to: str, subject: str, body_html: str, folder_key: str = "
         return ""
 
 
+async def _send_gmail_verbose(to: str, subject: str, body_html: str,
+                              folder_key: str = "a1dc9c4b-4ba4-4ac1-837d-9c6b093457a3") -> dict:
+    """Same send as _send_gmail, but returns {status, body} for diagnostics."""
+    to = to.strip()
+    if not to:
+        return {"status": 0, "body": "no recipient"}
+    try:
+        token = _get_token()
+        url = f"{UIPATH_BASE_URL}/elements_/v3/element/instances/{GMAIL_CONNECTION_ID}/SendEmail"
+        body_fields = {"To": to, "Subject": subject, "Body": body_html, "Importance": "normal"}
+        files = {"body": ("", json.dumps(body_fields), "application/json")}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "x-uipath-folderkey": folder_key,
+            "x-uipath-originator": "saas-agents",
+            "x-uipath-source": "saas-agents",
+            "Accept": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(url, headers=headers, files=files)
+        return {"status": r.status_code, "body": r.text[:400]}
+    except Exception as exc:
+        return {"status": -1, "body": f"{type(exc).__name__}: {exc}"}
+
+
 async def _get_element_executions(instance_id: str, folder_key: str) -> dict | None:
     url = f"{UIPATH_BASE_URL}/pims_/api/v1/instances/{instance_id}/element-executions"
     try:
@@ -274,40 +321,114 @@ async def _get_element_executions(instance_id: str, folder_key: str) -> dict | N
         return None
 
 
-async def _watch_and_notify_manager_of_hitl(
+async def _find_review_task_link(instance_id: str) -> tuple[int | None, str]:
+    """Render-safe review-link discovery via the Orchestrator Tasks API.
+
+    The Maestro element-executions trail carries the authoritative task
+    `externalLink`, but that pims_ API is not reachable by the Render app
+    token. The Orchestrator Tasks API (GetTasksAcrossFolders) IS in the app's
+    scope (it already powers the admin panel's real Approve/Reject), and each
+    AppTask carries the CreatorJobKey of the case that raised it — so we can
+    match the pending review task back to THIS case instance without Maestro,
+    then build the Action Center deep link from the task id.
+
+    Returns (task_id, link) — (None, "") if no matching pending task yet.
+    Never raises."""
+    if not instance_id:
+        return None, ""
+    url = (
+        f"{UIPATH_BASE_URL}/orchestrator_/odata/Tasks/UiPath.Server.Configuration.OData.GetTasksAcrossFolders"
+        "?$filter=Type eq 'AppTask' and IsCompleted eq false"
+        "&$orderby=Id desc&$top=50"
+        "&$select=Id,Status,CreatorJobKey,OrganizationUnitId"
+    )
+    try:
+        token = _get_token()
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, headers=headers)
+        if r.status_code != 200:
+            print(f"[hitl-watch] GetTasksAcrossFolders failed ({r.status_code}) for {instance_id}: {r.text[:200]}")
+            return None, ""
+        for t in r.json().get("value", []):
+            if str(t.get("CreatorJobKey") or "") == str(instance_id):
+                tid = t["Id"]
+                # Cache the folder so a later /decide doesn't have to re-search.
+                _TASK_FOLDER[tid] = str(t.get("OrganizationUnitId", ""))
+                return tid, ACTION_CENTER_TASK_URL_TMPL.format(task_id=tid)
+        return None, ""
+    except Exception as exc:
+        print(f"[hitl-watch] GetTasksAcrossFolders error (non-fatal) for {instance_id}: {exc}")
+        return None, ""
+
+
+async def _watch_and_notify_reviewer_of_hitl(
     instance_id: str | None,
-    manager_email: str,
+    reviewer_email: str,
     employee_name: str,
     case_id: str,
     expense_type: str,
     vendor: str,
     amount: float,
     currency: str,
+    claimant_email: str = "",
+    expense_date: str = "",
+    business_purpose: str = "",
     folder_key: str = "a1dc9c4b-4ba4-4ac1-837d-9c6b093457a3",
 ) -> None:
     """Background task: poll the running MirCaseClone instance until its
-    Human-Review UserTask shows up, then email the manager a direct Action
-    Center link so they can Approve/Reject from their phone or laptop —
-    best-effort, never raises, no-ops quietly if there's nothing to watch."""
-    manager_email = (manager_email or "").strip()
-    if not manager_email or not instance_id:
+    Human-Review task shows up, then email the reviewer the Approve/Reject
+    Action Center link so they can decide from their phone or laptop —
+    best-effort, never raises, no-ops quietly if there's nothing to watch.
+
+    Link discovery is dual-source so it works in BOTH environments:
+      1. Maestro element-executions `externalLink` — authoritative, reachable
+         with a user token (locally).
+      2. Orchestrator Tasks API (`_find_review_task_link`) — reachable with the
+         Render app token, matched to this case by CreatorJobKey.
+
+    Send path is gated by REVIEWER_MAIL_VIA_AGENT: a SubmissionConfirmationAgent
+    job in 'reviewer' mode (delivers on Render, needs the agent redeploy) or the
+    legacy direct Gmail send (works locally)."""
+    reviewer_email = (reviewer_email or "").strip()
+    if not reviewer_email or not instance_id:
         return
 
-    seen_element_ids: set[str] = set()
     elapsed = 0
     while elapsed < _HITL_WATCH_TIMEOUT_S:
+        link = ""
+        task_id: int | None = None
+
+        # 1) Preferred: authoritative externalLink from the Maestro trail.
         data = await _get_element_executions(instance_id, folder_key)
         if data:
             for el in data.get("elementExecutions", []):
-                if el.get("elementType") != "UserTask":
-                    continue
-                el_id = el.get("elementId")
-                if el_id in seen_element_ids:
-                    continue
-                seen_element_ids.add(el_id)
-                link = el.get("externalLink") or ""
-                if not link:
-                    continue
+                if el.get("elementType") == "UserTask" and (el.get("externalLink") or el.get("maestroLink")):
+                    link = el.get("externalLink") or el.get("maestroLink")
+                    break
+
+        # 2) Render-safe fallback: the pending review task via the Tasks API.
+        if not link:
+            task_id, link = await _find_review_task_link(instance_id)
+
+        if link:
+            if REVIEWER_MAIL_VIA_AGENT:
+                job_id = await _notify_reviewer_via_agent(
+                    reviewer_email=reviewer_email,
+                    claimant_name=employee_name,
+                    claimant_email=claimant_email,
+                    case_id=case_id,
+                    expense_type=expense_type,
+                    vendor=vendor,
+                    amount=amount,
+                    currency=currency,
+                    expense_date=expense_date,
+                    business_purpose=business_purpose,
+                    review_link=link,
+                )
+                print(f"[hitl-watch] reviewer decision email fired via agent job {job_id} "
+                      f"for case {case_id} (task {task_id}, to {reviewer_email})")
+            else:
                 subject = f"Action needed: {expense_type} reimbursement for {employee_name} ({currency} {amount:.2f})"
                 body_html = (
                     f"<p>Hi,</p>"
@@ -317,12 +438,17 @@ async def _watch_and_notify_manager_of_hitl(
                     f"— works from your phone or laptop browser.</p>"
                     f"<p style=\"color:#6b7280;font-size:12px;\">Case reference: {case_id}</p>"
                 )
-                msg_id = await _send_gmail(manager_email, subject, body_html, folder_key)
-                print(f"[hitl-watch] notified manager {manager_email} for case {case_id} (gmail id={msg_id})")
-                return  # one HITL task per case run is enough
-            # If the instance run is done and no UserTask ever appeared, stop watching.
-            if data.get("status") in ("Completed", "Faulted", "Cancelled"):
-                return
+                msg_id = await _send_gmail(reviewer_email, subject, body_html, folder_key)
+                print(f"[hitl-watch] reviewer decision email sent (direct gmail id={msg_id}) "
+                      f"for case {case_id} (to {reviewer_email})")
+            return  # one HITL task per case run is enough
+
+        # No link yet. If the Maestro trail says the case is fully done (and the
+        # Tasks API above still saw no task), there will never be one — stop.
+        if data and data.get("status") in ("Completed", "Faulted", "Cancelled"):
+            print(f"[hitl-watch] case {case_id} finished with no HITL task — nothing to notify")
+            return
+
         await asyncio.sleep(_HITL_WATCH_INTERVAL_S)
         elapsed += _HITL_WATCH_INTERVAL_S
     print(f"[hitl-watch] gave up watching case {case_id} for a HITL task after {_HITL_WATCH_TIMEOUT_S}s")
@@ -377,6 +503,168 @@ async def _send_confirmation_agent(
         print(f"[confirmation-agent] fired for {role} ({recipient_email}, case {case_id})")
     except Exception as exc:
         print(f"[confirmation-agent] error for {role} (non-fatal): {exc}")
+
+
+# ── Manager submission heads-up — a DIFFERENT, realistic email to the manager,
+# fired at submission time (the same moment as the employee's confirmation) ──
+# Sent via a SubmissionConfirmationAgent JOB in 'manager' audience mode, NOT a
+# direct Gmail send. Why: the direct Integration Service `SendEmail` call is not
+# authorized for the Render client-credentials app token (401 "User is not
+# authorized"), so it silently failed in production. Firing the agent means the
+# Gmail send runs INSIDE the job with the in-context connection — the same
+# reliable path the submitter confirmation already uses — so it delivers on
+# Render too. This is the proactive "a claim is on its way, you may be asked to
+# sign off shortly" note; the actual Approve/Reject email with the Action Center
+# link is sent later, only if the case reaches Human Review, by
+# _watch_and_notify_reviewer_of_hitl.
+#
+# Double-count note: this is a SECOND SubmissionConfirmationAgent job per case,
+# so the raw per-process panels (/admin job_health + recent_jobs) will show the
+# agent running ~2× for cases that carry a manager email — that is truthful (two
+# distinct emails are genuinely sent). The headline funnel is unaffected: cases /
+# auto_approved / rejected / awaiting all derive from the payout/reject/HITL
+# processes (see _live_totals), never from the confirmation agent. To avoid a
+# *spurious* second job we skip when the manager address is blank or is the same
+# person as the submitter (the submitter confirmation already covers them).
+async def _send_manager_submission_notice(
+    manager_email: str,
+    employee_name: str,
+    employee_email: str,
+    case_id: str,
+    expense_type: str,
+    vendor: str,
+    amount: float,
+    currency: str,
+    date: str,
+    purpose: str,
+) -> str:
+    """Fire SubmissionConfirmationAgent in 'manager' mode. Returns the Orchestrator
+    job id on success, or '' on skip/failure. Never raises."""
+    manager_email = (manager_email or "").strip()
+    if not manager_email:
+        print("[manager-notice] no manager email provided — skipping")
+        return ""
+    if manager_email.lower() == (employee_email or "").strip().lower():
+        print(f"[manager-notice] manager == submitter ({manager_email}) — skipping "
+              "redundant second agent job (submitter confirmation already covers them)")
+        return ""
+    try:
+        token = _get_token()
+        url = f"{UIPATH_BASE_URL}/orchestrator_/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
+        body = {
+            "startInfo": {
+                "ReleaseKey": CONFIRMATION_AGENT_RELEASE_KEY,
+                "Strategy": "ModernJobsCount",
+                "JobsCount": 1,
+                "InputArguments": json.dumps(
+                    {
+                        "audience": "manager",
+                        # In manager mode employee_email is the RECIPIENT (the manager);
+                        # the claimant is described via claimant_name/claimant_email.
+                        "employee_email": manager_email,
+                        "employee_name": "",
+                        "claimant_name": employee_name,
+                        "claimant_email": employee_email,
+                        "case_id": case_id,
+                        "expense_type": expense_type,
+                        "vendor": vendor,
+                        "amount": amount,
+                        "currency": currency,
+                        "expense_date": date,
+                        "business_purpose": purpose,
+                    }
+                ),
+            }
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(url, json=body, headers=_hdrs(token, FOLDER_ID))
+        if r.status_code not in (200, 201):
+            print(f"[manager-notice] StartJobs failed ({r.status_code}) for {manager_email}: {r.text[:300]}")
+            return ""
+        try:
+            job_id = str((r.json().get("value") or [{}])[0].get("Id") or "")
+        except Exception:
+            job_id = ""
+        print(f"[manager-notice] agent job fired for manager {manager_email} "
+              f"(case {case_id}, job {job_id})")
+        return job_id
+    except Exception as exc:
+        print(f"[manager-notice] error (non-fatal) for case {case_id}: {exc}")
+        return ""
+        return ""
+
+
+# ── Reviewer Approve/Reject email — fired via a SubmissionConfirmationAgent
+# JOB in 'reviewer' audience mode, carrying the Action Center review_link, when
+# a case reaches Human Review. Same reasoning as the manager heads-up: the
+# direct Integration Service SendEmail call is not authorized for the Render
+# client-credentials app token (401), so the Gmail send must run INSIDE a job
+# (in-context connection) to deliver on Render. Requires the agent to support
+# audience='reviewer' + review_link (the 3.18.1 -> 3.18.2 redeploy); until then
+# REVIEWER_MAIL_VIA_AGENT stays 0 and the legacy direct send is used locally. ──
+async def _notify_reviewer_via_agent(
+    reviewer_email: str,
+    claimant_name: str,
+    claimant_email: str,
+    case_id: str,
+    expense_type: str,
+    vendor: str,
+    amount: float,
+    currency: str,
+    expense_date: str,
+    business_purpose: str,
+    review_link: str,
+) -> str:
+    """Fire SubmissionConfirmationAgent in 'reviewer' mode. Returns the
+    Orchestrator job id on success, or '' on skip/failure. Never raises."""
+    reviewer_email = (reviewer_email or "").strip()
+    if not reviewer_email:
+        print("[reviewer-notice] no reviewer email — skipping")
+        return ""
+    try:
+        token = _get_token()
+        url = f"{UIPATH_BASE_URL}/orchestrator_/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
+        body = {
+            "startInfo": {
+                "ReleaseKey": CONFIRMATION_AGENT_RELEASE_KEY,
+                "Strategy": "ModernJobsCount",
+                "JobsCount": 1,
+                "InputArguments": json.dumps(
+                    {
+                        "audience": "reviewer",
+                        # In reviewer mode employee_email is the RECIPIENT (the reviewer);
+                        # the claimant is described via claimant_name/claimant_email.
+                        "employee_email": reviewer_email,
+                        "employee_name": "",
+                        "claimant_name": claimant_name,
+                        "claimant_email": claimant_email,
+                        "case_id": case_id,
+                        "expense_type": expense_type,
+                        "vendor": vendor,
+                        "amount": amount,
+                        "currency": currency,
+                        "expense_date": expense_date,
+                        "business_purpose": business_purpose,
+                        "review_link": review_link,
+                    }
+                ),
+            }
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(url, json=body, headers=_hdrs(token, FOLDER_ID))
+        if r.status_code not in (200, 201):
+            print(f"[reviewer-notice] StartJobs failed ({r.status_code}) for {reviewer_email}: {r.text[:300]}")
+            return ""
+        try:
+            job_id = str((r.json().get("value") or [{}])[0].get("Id") or "")
+        except Exception:
+            job_id = ""
+        print(f"[reviewer-notice] agent job fired for reviewer {reviewer_email} "
+              f"(case {case_id}, job {job_id})")
+        return job_id
+    except Exception as exc:
+        print(f"[reviewer-notice] error (non-fatal) for case {case_id}: {exc}")
+        return ""
 
 
 # ── Admin panel — live Orchestrator reads (whole ReimbursementFullSolution) ─
@@ -449,6 +737,7 @@ async def _list_pending_hitl_tasks(token: str) -> tuple[list[dict], str]:
         _TASK_FOLDER[tid] = str(t.get("OrganizationUnitId", ""))
         job_key = t.get("CreatorJobKey") or ""
         sub = _SUBMISSIONS.get(job_key, {})
+        _TASK_CASE[tid] = sub.get("case_id", job_key)
         debate_rationale = ""
         if sub.get("case_id"):
             with _DEBATES_LOCK:
@@ -526,9 +815,93 @@ _PENDING_HITL_LOCK = threading.Lock()
 # the vendor/amount/employee that submitted it, for the admin panel.
 _SUBMISSIONS: dict[str, dict] = {}
 _MAX_SUBMISSIONS = 200
+
+# Idempotency guard: an identical claim (same employee/vendor/amount/date/type)
+# re-submitted inside this window is treated as a double-fire (a nervous demo
+# double-click, a browser retry) and replays the FIRST response instead of
+# starting a second real MirCaseClone case — which would otherwise duplicate the
+# payout path, the emails, and the funnel counts. Keyed by a content hash.
+_RECENT_SUBMITS: dict[str, tuple[float, dict]] = {}
+_SUBMIT_DEDUPE_WINDOW_S = 90.0
+
+
+def _submit_fingerprint(*parts: object) -> str:
+    import hashlib
+
+    raw = "|".join(str(p).strip().lower() for p in parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 # TaskId -> folder id it was found in, so /decide knows which folder header
 # to use for AssignTasks/CompleteAppTask without re-searching.
 _TASK_FOLDER: dict[int, str] = {}
+# TaskId -> case_id, so a human Approve/Reject can be scored against the AI's
+# recommendation for that same claim (the AI↔Human agreement metric).
+_TASK_CASE: dict[int, str] = {}
+
+# Each human HITL decision, tagged with what the AI recommended for the same
+# claim, so /admin can show a real "reviewers uphold the AI X% of the time"
+# trust metric. Session-scoped (like the debate records it reads from).
+_HUMAN_DECISIONS: list[dict] = []
+_MAX_HUMAN_DECISIONS = 200
+
+
+def _ai_lean(rec: dict) -> str:
+    """Best-effort 'approve' | 'reject' | 'uncertain' the AI leaned toward for a
+    claim, even when the pipeline escalated it to a human. Reads the overall
+    recommendation first, then policy routing, then the classifier's own call."""
+    r = (rec.get("recommendation") or "").upper()
+    if "REJECT" in r:
+        return "reject"
+    if "APPROVE" in r or "PROCEED" in r:
+        return "approve"
+    ev = rec.get("evidence", {}) or {}
+    routing = ((ev.get("policy") or {}).get("routing_decision") or "").lower()
+    if routing == "reject":
+        return "reject"
+    if routing in ("approve", "proceed", "auto_approve"):
+        return "approve"
+    cr = ((ev.get("classifier") or {}).get("recommendation") or "").lower()
+    if "reject" in cr:
+        return "reject"
+    if "approve" in cr:
+        return "approve"
+    return "uncertain"
+
+
+def _record_human_decision(task_id: int, human_action: str) -> None:
+    """Score a completed human review against the AI's recommendation."""
+    case_id = _TASK_CASE.get(task_id)
+    if not case_id:
+        return
+    with _DEBATES_LOCK:
+        rec = next((d for d in _DEBATES if d.get("case_id") == case_id), None)
+    if not rec:
+        return
+    lean = _ai_lean(rec)
+    agreed = None if lean == "uncertain" else (lean == human_action)
+    _HUMAN_DECISIONS.append({
+        "case_id": case_id,
+        "task_id": task_id,
+        "human_action": human_action,
+        "ai_lean": lean,
+        "ai_recommendation": rec.get("recommendation"),
+        "agreed": agreed,
+        "ts": time.time(),
+    })
+    del _HUMAN_DECISIONS[:-_MAX_HUMAN_DECISIONS]
+
+
+def _agreement_summary() -> dict:
+    """Roll up _HUMAN_DECISIONS into the trust metric shown on /admin."""
+    decided = [d for d in _HUMAN_DECISIONS if d.get("agreed") is not None]
+    agreed = sum(1 for d in decided if d["agreed"])
+    total = len(decided)
+    return {
+        "human_reviews": len(_HUMAN_DECISIONS),
+        "scored": total,
+        "agreed": agreed,
+        "overturned": total - agreed,
+        "agreement_rate": round(100.0 * agreed / total, 1) if total else None,
+    }
 
 # Background asyncio tasks not routed through Starlette's BackgroundTasks —
 # BackgroundTasks awaits its queue SEQUENTIALLY, so a long-running poller
@@ -934,6 +1307,66 @@ def health():
     return {"status": "ok", "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12]}
 
 
+# Deep, tenant-aware readiness — cached for _HEALTH_TTL_S so a dashboard badge
+# polling it can't hammer Orchestrator. Answers the one question that silently
+# kills a live demo: is the CASE_RELEASE_KEY this app is configured to start
+# STILL the runnable MirCaseClone release in the folder? (Release keys drift on
+# every Case redeploy — session gotcha #1.) A green badge here means "submit
+# will actually trigger a case"; amber/red means the key drifted or the tenant
+# is unreachable, so you can fix it BEFORE demoing, not during.
+_HEALTH_LOCK = threading.Lock()
+_HEALTH_CACHE: dict = {}
+_HEALTH_TS = 0.0
+_HEALTH_TTL_S = 30.0
+
+
+@app.get("/api/health/uipath")
+async def health_uipath():
+    global _HEALTH_CACHE, _HEALTH_TS
+    now = time.time()
+    with _HEALTH_LOCK:
+        if _HEALTH_CACHE and (now - _HEALTH_TS) < _HEALTH_TTL_S:
+            return _HEALTH_CACHE
+
+    configured = CASE_RELEASE_KEY.upper()
+    result = {
+        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
+        "tenant_reachable": False,
+        "case_release_configured": configured,
+        "case_release_runnable": None,   # matching runnable release key found in folder
+        "case_key_ok": False,            # configured key == a runnable release
+        "checked_at": now,
+        "error": "",
+    }
+    try:
+        token = _get_token()
+        releases = await _list_releases(token, FOLDER_ID)
+        result["tenant_reachable"] = True
+        # Find the currently-runnable MirCaseClone release by name, compare keys.
+        case_rel = next(
+            (r for r in releases if (r.get("Name") or "") == _CASE_PROCESS
+             or "mir_clone" in (r.get("Name") or "").lower()),
+            None,
+        )
+        if case_rel:
+            runnable = (case_rel.get("Key") or "").upper()
+            result["case_release_runnable"] = runnable
+            result["case_key_ok"] = runnable == configured
+        else:
+            # Fall back to a straight membership test across all release keys.
+            keys = {(r.get("Key") or "").upper() for r in releases}
+            result["case_key_ok"] = configured in keys
+    except Exception as exc:
+        result["error"] = str(exc)[:300]
+
+    result["status"] = "ok" if (result["tenant_reachable"] and result["case_key_ok"]) else \
+        ("degraded" if result["tenant_reachable"] else "down")
+    with _HEALTH_LOCK:
+        _HEALTH_CACHE = result
+        _HEALTH_TS = now
+    return result
+
+
 @app.post("/api/submit")
 async def submit(
     background_tasks: BackgroundTasks,
@@ -954,6 +1387,27 @@ async def submit(
         raise HTTPException(422, "amount must be a number.")
     if amt <= 0:
         raise HTTPException(422, "amount must be greater than 0.")
+
+    # Idempotency: replay the first response for an identical claim re-submitted
+    # inside the dedupe window instead of starting a second real case.
+    fp = _submit_fingerprint(employeeEmail, vendor, amt, date, expenseType)
+    now = time.time()
+    with _PENDING_HITL_LOCK:
+        # Opportunistic sweep of expired fingerprints so the dict can't grow.
+        for k, (ts, _) in list(_RECENT_SUBMITS.items()):
+            if now - ts > _SUBMIT_DEDUPE_WINDOW_S:
+                del _RECENT_SUBMITS[k]
+        prior = _RECENT_SUBMITS.get(fp)
+        if prior and (now - prior[0]) <= _SUBMIT_DEDUPE_WINDOW_S:
+            replay = prior[1]
+        else:
+            # Reserve the fingerprint NOW (before the >1s case-start awaits) so a
+            # near-simultaneous double-click is deduplicated even though the real
+            # response isn't ready yet. Filled in with the real payload at the end.
+            _RECENT_SUBMITS[fp] = (now, {"status": "processing"})
+            replay = None
+    if replay is not None:
+        return {**replay, "deduplicated": True}
 
     case_id = str(uuid.uuid4())
     token = _get_token()
@@ -1016,23 +1470,24 @@ async def submit(
     # sequentially, so registering it there would delay every other email
     # below (confirmation, Resend) by however long this poll takes.
     _fire_and_forget(
-        _watch_and_notify_manager_of_hitl(
+        _watch_and_notify_reviewer_of_hitl(
             instance_id=job_id,
-            manager_email=HITL_DECISION_EMAIL,
+            reviewer_email=HITL_DECISION_EMAIL,
             employee_name=employeeName,
             case_id=case_id,
             expense_type=expenseType,
             vendor=vendor,
             amount=amt,
             currency=currency,
+            claimant_email=employeeEmail,
+            expense_date=date,
+            business_purpose=purpose,
         )
     )
 
-    # Submitter confirmation — real Gmail send, reaches any real address.
-    # Fired ONCE, to the submitter only. The manager is covered by the Resend
-    # finance/manager notification below and the HITL watcher email, so we do
-    # NOT fire the confirmation agent a second time for the manager (that made
-    # SubmissionConfirmationAgent show up as two jobs per case in Orchestrator).
+    # Submitter confirmation — SubmissionConfirmationAgent job in the default
+    # 'submitter' audience, to the submitter only. Runs inside a job so the Gmail
+    # send uses the in-context connection (delivers on Render).
     background_tasks.add_task(
         _send_confirmation_agent,
         recipient_email=employeeEmail,
@@ -1043,6 +1498,25 @@ async def submit(
         amount=amt,
         currency=currency,
         role="submitter",
+    )
+    # Manager heads-up — a DIFFERENT, manager-worded email to the form's manager,
+    # fired at the same moment. Now sent via a SECOND SubmissionConfirmationAgent
+    # job in 'manager' audience mode (was a direct Gmail send that 401'd for the
+    # Render app token). Skips itself when the manager address is blank or equals
+    # the submitter's, so it only double-fires the agent for a genuinely distinct
+    # recipient. See _send_manager_submission_notice for the double-count note.
+    background_tasks.add_task(
+        _send_manager_submission_notice,
+        manager_email=managerEmail,
+        employee_name=employeeName,
+        employee_email=employeeEmail,
+        case_id=case_id,
+        expense_type=expenseType,
+        vendor=vendor,
+        amount=amt,
+        currency=currency,
+        date=date,
+        purpose=purpose,
     )
     # Resend — belt-and-suspenders finance/manager notification + submitter fallback.
     background_tasks.add_task(
@@ -1087,7 +1561,7 @@ async def submit(
         },
     )
 
-    return {
+    response = {
         "case_id": case_id,
         "job_id": job_id,
         "attachment": attachment_name,
@@ -1095,9 +1569,113 @@ async def submit(
         "amount": amt,
         "currency": currency,
     }
+    # Fill the reserved fingerprint with the real response (keeping the original
+    # reservation timestamp) so an identical re-submit inside the window replays
+    # this exact payload instead of firing a second case.
+    with _PENDING_HITL_LOCK:
+        reserved = _RECENT_SUBMITS.get(fp)
+        ts0 = reserved[0] if reserved else time.time()
+        _RECENT_SUBMITS[fp] = (ts0, response)
+    return response
 
 
 # ── Live debate console (public — no secrets exposed) ───────────────────────
+
+@app.post("/api/admin/test-manager-notice")
+async def test_manager_notice(to: str, _: str = Depends(require_admin)):
+    """Fire ONLY the manager heads-up — now via the SubmissionConfirmationAgent
+    JOB in 'manager' audience mode — to `to`, with sample claim data. Lets the
+    manager email be previewed/demoed on Render without running a whole case.
+    Admin-protected. Returns the Orchestrator job id so the response confirms the
+    job-based path started; the email itself is sent from inside that job (the
+    reliable in-context Gmail path). Also runs the OLD direct-Gmail probe for
+    comparison, so you can still see whether the direct IS send is (un)authorized."""
+    # Note: the sample submitter email differs from `to`, so the manager==submitter
+    # skip guard doesn't suppress this preview.
+    probe = await _send_gmail_verbose(
+        to, "Gmail connectivity probe (manager-notice)",
+        "<p>Direct Gmail Integration Service probe — NOT the path used for the "
+        "manager email anymore (that now goes through an agent job).</p>",
+    )
+    job_id = await _send_manager_submission_notice(
+        manager_email=to,
+        employee_name="Subharjun Bose",
+        employee_email="subharjun.bose2805@gmail.com",
+        case_id="CASE-PREVIEW-MGR",
+        expense_type="Meals & Entertainment",
+        vendor="Taj Hotels",
+        amount=8500.0,
+        currency="INR",
+        date="2026-07-06",
+        purpose="Client dinner during Q3 partnership review",
+    )
+    return {
+        "ok": bool(job_id),
+        "sent_to": to,
+        "path": "SubmissionConfirmationAgent job (audience=manager)",
+        "agent_job_id": job_id or None,
+        "direct_gmail_probe": probe,   # {status, body} — the OLD direct IS path, for reference
+        "hint": ("agent job started — the manager email is sent from inside the job "
+                 "(in-context Gmail connection), which delivers on Render. Confirm it "
+                 "landed in the inbox; the job also appears under SubmissionConfirmationAgent "
+                 "in /admin."
+                 if job_id else
+                 "agent job did NOT start — StartJobs failed (check the release key drift / "
+                 "token scope in the server logs)"),
+    }
+
+
+@app.post("/api/admin/test-reviewer-notice")
+async def test_reviewer_notice(to: str, _: str = Depends(require_admin)):
+    """Fire ONLY the reviewer Approve/Reject email — via the SubmissionConfirmationAgent
+    JOB in 'reviewer' audience mode — to `to`, with a sample claim + a placeholder
+    review link. Lets the decision email be previewed/demoed on Render without running
+    a whole case to Human Review. Admin-protected.
+
+    Also runs the OLD direct-Gmail probe (the legacy reviewer send path) so you can see
+    the 401 that motivated moving this to a job. NOTE: the agent job only sends the
+    'reviewer' email once the agent supports audience='reviewer' + review_link (the
+    3.18.1 -> 3.18.2 redeploy); before that redeploy the job will fall through to the
+    default 'submitter' template — so a landed email that looks like a receipt (not an
+    Approve/Reject card) means the redeploy hasn't happened yet."""
+    probe = await _send_gmail_verbose(
+        to, "Gmail connectivity probe (reviewer-notice)",
+        "<p>Direct Gmail Integration Service probe — the OLD reviewer send path that "
+        "401s for the Render app token. The real reviewer email now goes through an "
+        "agent job (audience=reviewer).</p>",
+    )
+    sample_link = ACTION_CENTER_TASK_URL_TMPL.format(task_id="PREVIEW")
+    job_id = await _notify_reviewer_via_agent(
+        reviewer_email=to,
+        claimant_name="Subharjun Bose",
+        claimant_email="subharjun.bose2805@gmail.com",
+        case_id="CASE-PREVIEW-REV",
+        expense_type="Meals & Entertainment",
+        vendor="Taj Hotels",
+        amount=8500.0,
+        currency="INR",
+        expense_date="2026-07-06",
+        business_purpose="Client dinner during Q3 partnership review",
+        review_link=sample_link,
+    )
+    return {
+        "ok": bool(job_id),
+        "sent_to": to,
+        "path": "SubmissionConfirmationAgent job (audience=reviewer)",
+        "agent_job_id": job_id or None,
+        "review_link_used": sample_link,
+        "reviewer_mail_via_agent_flag": REVIEWER_MAIL_VIA_AGENT,
+        "direct_gmail_probe": probe,   # {status, body} — the OLD direct IS path, for reference
+        "hint": ("agent job started — once the agent supports audience='reviewer' "
+                 "(3.18.2 redeploy), the email is the Approve/Reject card with the link, "
+                 "sent from inside the job (delivers on Render). If the flag above is "
+                 "false, the live case watcher still uses the direct send until you set "
+                 "UIPATH_REVIEWER_MAIL_VIA_AGENT=1 on Render."
+                 if job_id else
+                 "agent job did NOT start — StartJobs failed (check release key drift / "
+                 "token scope in the server logs)"),
+    }
+
 
 @app.get("/api/debates")
 async def get_debates():
@@ -1359,6 +1937,7 @@ async def admin_overview(_admin: str = Depends(require_admin)):
         "audit": _live_audit(jobs, cases, inputs_by_key=_JOB_INPUTS),
         "job_health": job_health,
         "releases": releases,
+        "agreement": _agreement_summary(),
     }
 
 
@@ -1432,6 +2011,8 @@ async def decide_hitl(task_id: int, body: dict = Body(...), _admin: str = Depend
     notes = (body.get("notes") or "").strip()
     token = _get_token()
     await _decide_hitl_task(token, task_id, action, notes)
+    # Score this human call against the AI's recommendation for the same claim.
+    _record_human_decision(task_id, action)
     return {"task_id": task_id, "action": action, "status": "decided"}
 
 

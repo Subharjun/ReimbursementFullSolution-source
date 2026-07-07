@@ -10,17 +10,20 @@ WHY THIS EXISTS
     pipeline's three reasoning stages (Classify, Fraud, Policy) into a transparent
     debate instead of a silent sequential hand-off.
 
-HOW IT WORKS  (hybrid-live by default; deterministic arbitration)
-    The debate runs in three rounds. By default (live=True) the two reasoning
-    stages that are actually deployed as their own runnable Orchestrator process
-    -- ReimbursementClassificationAgent (Classify) and PolicyRuleCheckWorkflow
-    (Policy) -- are scored by REAL Orchestrator jobs via `live_agents.py`, each
-    with a per-agent graceful fallback to its local port if the job faults or
-    the release key drifts. Fraud screening (`detectors.py`) and the final
-    arbitration are deterministic code and run locally by design -- there is no
-    standalone FraudIntegrityAgent or ConsensusArbitrationWorkflow deployed, so
-    "live" is genuinely hybrid, not all-or-nothing. The returned `engine` block
-    records, per agent, whether it ran `live` (+ the real job id) or `local`.
+HOW IT WORKS  (fully live by default)
+    The debate runs in three rounds. By default (live=True) ALL FOUR reasoning
+    stages are scored by REAL Orchestrator jobs via `live_agents.py`, each with a
+    per-agent graceful fallback to its local port if the job faults or the release
+    key drifts:
+      * Classify     -> ReimbursementClassificationAgent (LLM agent)
+      * Fraud        -> FraudIntegrityAgent (deterministic detectors floored, LLM
+                        judgment on top -- may escalate but never soften)
+      * Policy       -> PolicyRuleCheckWorkflow (API workflow)
+      * Arbitration  -> ConsensusArbitrationAgent (deterministic precedence is the
+                        compliance FLOOR, LLM makes the final call above it)
+    The returned `engine` block records, per stage, whether it ran `live` (+ the
+    real job id) or fell back to `local`; `mode` is "live" when all four ran as
+    jobs, "hybrid" when some fell back, "fallback" when all did, "local" offline.
     Set CONSENSUS_ENGINE_OFFLINE=1 (or run_debate(..., live=False)) to force the
     all-local ports (e.g. no network / no `uip login` / fast CI / bulk backfill).
 
@@ -28,15 +31,17 @@ HOW IT WORKS  (hybrid-live by default; deterministic arbitration)
       Round 2  CHALLENGE   agents cross-examine: the Fraud Sentinel challenges an
                            over-confident Classifier; the Policy Arbiter raises
                            hard-rule vetoes; the Classifier concedes or defends.
-      Round 3  CONSENSUS   the real ConsensusArbitrationWorkflow's recommendation
-                           is read out and any dissent is recorded.
+      Round 3  CONSENSUS   the ConsensusArbitrationAgent's final verdict is read
+                           out and any dissent is recorded.
 
-    The verdict always comes from code (the deployed workflow or, offline, the
-    documented precedence below) -- never from an LLM. An LLM is only ever used
-    to *narrate* the already-decided turns, exactly like the deployed
-    FraudIntegrityAgent's detect->explain split.
+    Compliance safety is structural, not trust-based: the fraud + arbitration
+    agents each run a deterministic floor first and a monotonic server-side
+    guardrail clamps the LLM so it can only ever make a verdict STRICTER, never
+    softer -- a hard block (over spend limit / confirmed duplicate) can never be
+    soft-overridden by an LLM. Offline, that same deterministic precedence IS the
+    verdict.
 
-ARBITRATION PRECEDENCE  (highest wins)
+ARBITRATION PRECEDENCE  (the deterministic floor; highest wins)
     1. Hard policy violation (over spend limit, or confirmed duplicate)  -> REJECT
     2. Fraud Sentinel says reject (score >= High band)                   -> REJECT
     3. Fraud says review, OR split-claim detected                       -> HITL_REVIEW
@@ -52,7 +57,9 @@ import os
 import sys
 
 from .agents import classify, policy_check, fraud_screen, roi, _to_float
-from .live_agents import classify_live, policy_check_live
+from .live_agents import (
+    classify_live, policy_check_live, fraud_live, arbitrate_live, EXPECTED_LIVE_STAGES,
+)
 
 # Live by default: every claim is scored by the ACTUAL deployed Orchestrator
 # processes (real HTTP jobs), not the local ports in agents.py. Set
@@ -97,13 +104,14 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
     vendor = claim.get("vendor") or "(unknown vendor)"
 
     # --- independent findings ------------------------------------------------ #
-    # Hybrid live: Classify + Policy run as REAL Orchestrator jobs (with their
-    # own per-agent fallback to local); Fraud is deterministic (detectors.py)
-    # and has no standalone deployed process, so it always runs local.
+    # Fully live: all three findings stages (Classify, Fraud, Policy) run as REAL
+    # Orchestrator jobs -- ReimbursementClassificationAgent, FraudIntegrityAgent,
+    # PolicyRuleCheckWorkflow -- each with its own per-agent fallback to the local
+    # port if the job faults / a key drifts. live=False uses the all-local ports.
     if live:
         cls = classify_live(claim)
+        frd = fraud_live(claim, history)
         pol = policy_check_live(claim, cls)
-        frd = fraud_screen(claim, history)
     else:
         cls = classify(claim)
         frd = fraud_screen(claim, history)
@@ -223,10 +231,17 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
         ))
 
     # ==================== ROUND 3 - CONSENSUS ==================== #
-    # Arbitration is deterministic precedence code either way -- there is no
-    # deployed ConsensusArbitrationWorkflow to call, and a verdict must never
-    # come from an LLM (see module docstring).
+    # The deterministic precedence is the compliance FLOOR + the offline fallback.
+    # When live, the deployed ConsensusArbitrationAgent makes the final call on top
+    # of that floor (its own server-side guardrail forbids ever softening below it),
+    # so a hard compliance block can never be soft-overridden by the LLM.
     recommendation, path, rationale = _arbitrate(cls, frd, pol)
+    arb_source, arb_job = "deterministic", None
+    if live:
+        arb = arbitrate_live(cls, frd, pol, claim)
+        if arb:
+            recommendation, path, rationale = arb["recommendation"], arb["path"], arb["rationale"]
+            arb_source, arb_job = "live", arb["_job_id"]
 
     # What would each agent have decided ALONE? This is the multi-agent value
     # story: an agent in isolation can be wrong; the debate is what corrects it.
@@ -272,14 +287,17 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
                        "process": "ReimbursementClassificationAgent"},
         "policy": {"source": pol.get("_source", "local"), "job_id": pol.get("_job_id"),
                    "process": "PolicyRuleCheckWorkflow"},
-        "fraud": {"source": "deterministic", "job_id": None, "process": "detectors.py"},
-        "arbitration": {"source": "deterministic", "job_id": None, "process": "debate._arbitrate"},
+        "fraud": {"source": frd.get("_source", "deterministic"), "job_id": frd.get("_job_id"),
+                  "process": "FraudIntegrityAgent"},
+        "arbitration": {"source": arb_source, "job_id": arb_job,
+                        "process": "ConsensusArbitrationAgent"},
     }
     live_jobs = [a["job_id"] for a in agents_engine.values() if a["source"] == "live" and a["job_id"]]
     if not live:
         mode = "local"
     elif live_jobs:
-        mode = "live" if len(live_jobs) == 2 else "hybrid"  # both real jobs, or one fell back
+        # All four stages ran as real jobs -> "live"; some fell back -> "hybrid".
+        mode = "live" if len(live_jobs) == EXPECTED_LIVE_STAGES else "hybrid"
     else:
         mode = "fallback"  # asked for live, but every job fell back to local
     engine = {"mode": mode, "live_job_ids": live_jobs, "agents": agents_engine}

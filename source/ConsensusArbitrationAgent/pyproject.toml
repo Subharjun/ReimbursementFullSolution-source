@@ -1,0 +1,14 @@
+[project]
+name = "ConsensusArbitrationAgent"
+version = "0.0.1"
+description = "AgentHack - final reimbursement consensus arbitration (LangGraph agent, LLM judgment under hard compliance guardrails)"
+authors = [{ name = "Subharjun" }]
+dependencies = [
+    "uipath-langchain>=0.10.0, <0.11.0",
+]
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "uipath-dev>=0.0.79",
+]

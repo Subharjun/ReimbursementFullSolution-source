@@ -4,7 +4,7 @@
     "entryPoints": [
         {
             "filePath": "agent",
-            "uniqueId": "8ad0c0c3-d7f7-406a-93c1-5cd6f261d227",
+            "uniqueId": "efa9ed8c-5473-4c86-84d4-a1b8f5fb97e8",
             "type": "agent",
             "input": {
                 "type": "object",
@@ -125,6 +125,16 @@
                         "additionalProperties": true,
                         "title": "Assumptions",
                         "type": "object"
+                    },
+                    "judged_by": {
+                        "default": "deterministic",
+                        "title": "Judged By",
+                        "type": "string"
+                    },
+                    "escalated": {
+                        "default": false,
+                        "title": "Escalated",
+                        "type": "boolean"
                     }
                 },
                 "required": []
@@ -146,8 +156,8 @@
                         "metadata": {}
                     },
                     {
-                        "id": "explain",
-                        "name": "explain",
+                        "id": "judge",
+                        "name": "judge",
                         "type": "node",
                         "subgraph": null,
                         "metadata": {}
@@ -168,11 +178,11 @@
                     },
                     {
                         "source": "detect",
-                        "target": "explain",
+                        "target": "judge",
                         "label": null
                     },
                     {
-                        "source": "explain",
+                        "source": "judge",
                         "target": "__end__",
                         "label": null
                     }

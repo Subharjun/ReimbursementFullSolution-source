@@ -18,7 +18,7 @@ in one place. Each app also lives in its own standalone repo (linked below).
 
 | Folder | What it is |
 |---|---|
-| [`source/`](source/) | The **UiPath Maestro Case + agents/workflows** package sources (extracted): `MirCaseClone` (the Case), `ReimbursementClassificationAgent`, `PolicyRuleCheckWorkflow`, `StripePayoutWorkflow`, `NotificationAgent`, `RejectionNotificationAgent`, `SubmissionConfirmationAgent`, `ReceiptExtractor_XP`, `ReimbursementIntakeBot_XP`, plus `FraudIntegrityAgent` & `ConsensusArbitrationWorkflow`. |
+| [`source/`](source/) | The **UiPath Maestro Case + agents/workflows** package sources (extracted): `MirCaseClone` (the Case), `ReimbursementClassificationAgent`, `PolicyRuleCheckWorkflow`, `StripePayoutWorkflow`, `NotificationAgent`, `RejectionNotificationAgent`, `SubmissionConfirmationAgent`, `ReceiptExtractor_XP`, `ReimbursementIntakeBot_XP`, plus the two deployed Consensus Engine agents `FraudIntegrityAgent` (LLM judgment) & `ConsensusArbitrationAgent` (LLM final call) — `ConsensusArbitrationWorkflow` is the earlier deterministic-only workflow, kept for reference. |
 | [`downloaded_packages/`](downloaded_packages/) | The corresponding `.nupkg` build artifacts. |
 | [`reimbursement-intake-v2/`](reimbursement-intake-v2/) | The **live app** (FastAPI + React SPA): the public intake form, the Consensus Engine `/dashboard`, and the `/admin` ops panel. This is what triggers the Case. |
 | [`reimbursement-admin-dashboard/`](reimbursement-admin-dashboard/) | The **standalone** live-ops + consensus-debate dashboard (earlier split-out service; kept for reference). |
@@ -52,19 +52,26 @@ in one place. Each app also lives in its own standalone repo (linked below).
 ```
 
 ### The Consensus Engine (the differentiator)
-Invoice/receipt reading is commoditized. What isn't: three specialised agents
+Invoice/receipt reading is commoditized. What isn't: four specialised agents
 **cross-examining each other** and reaching a defensible, auditable consensus —
-with the dissent recorded. Fresh submissions are scored **hybrid-live**:
+with the dissent recorded. All four reasoning stages run as **real Orchestrator
+jobs**, each with a per-agent graceful fallback to a deterministic local port if
+a job faults or a release key drifts — so the dashboard never goes dark:
 
-- **Classifier** and **Policy** run as **real Orchestrator jobs** (the deployed
-  `ReimbursementClassificationAgent` / `PolicyRuleCheckWorkflow`), each with a
-  per-agent graceful fallback to a deterministic local port if a job faults or a
-  release key drifts — so the dashboard never goes dark.
-- **Fraud screening** and the **final arbitration** are deterministic code by
-  design (the verdict never comes from an LLM — it's auditable precedence logic).
+- **Classifier** (`ReimbursementClassificationAgent`) and **Policy**
+  (`PolicyRuleCheckWorkflow`) — the original two deployed reasoning stages.
+- **Fraud Sentinel** (`FraudIntegrityAgent`) — deterministic detectors are the
+  floor; an LLM synthesises a judgment on top and may **escalate** risk when
+  weak signals compound. A monotonic guardrail forbids ever softening the
+  verdict below the detectors, and it can never fabricate a duplicate/split flag.
+- **Arbitration** (`ConsensusArbitrationAgent`) — deterministic precedence is the
+  compliance floor; the LLM makes the final call above it. A monotonic guardrail
+  means a hard compliance block (over spend limit / confirmed duplicate / policy
+  reject) can **never** be soft-overridden by the LLM.
 - Each card shows a **⚡ LIVE / HYBRID / DETERMINISTIC** badge; click a job id to
-  verify the real Orchestrator job. A pinned hero surfaces the case where the
-  **debate changed the outcome** (agents that would have approved solo, caught by
+  verify the real Orchestrator job. `mode="live"` now requires all four stages to
+  have run as real jobs. A pinned hero surfaces the case where the **debate
+  changed the outcome** (agents that would have approved solo, caught by
   cross-examination).
 - The intake success screen shows a **live case timeline** driven off the real
   MirCaseClone stage cursor.

@@ -63,6 +63,11 @@
   .navlink{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent);
     text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:7px 13px; background:var(--panel)}
   .navlink:hover{border-color:var(--accent)}
+  .health-pill{font-family:var(--mono); font-size:11px; letter-spacing:.04em; border-radius:999px;
+    padding:6px 11px; border:1px solid var(--line); background:var(--panel); color:var(--muted); white-space:nowrap; cursor:default}
+  .health-pill.ok{color:var(--approve); border-color:color-mix(in srgb, var(--approve) 45%, transparent)}
+  .health-pill.degraded{color:var(--review); border-color:color-mix(in srgb, var(--review) 45%, transparent)}
+  .health-pill.down{color:var(--reject); border-color:color-mix(in srgb, var(--reject) 45%, transparent)}
 
   /* ---- KPI telemetry ---- */
   .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:22px}
@@ -203,6 +208,7 @@
     </div>
     <div class="spacer"></div>
     <a class="navlink" href="/admin" target="_blank" rel="noopener">Admin panel →</a>
+    <span id="uipHealth" class="health-pill" title="checking tenant + case release…">◌ checking…</span>
     <div class="status"><span class="dot"></span> <span id="statusTxt">live — polling real submissions</span></div>
     <button class="tbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
   </header>
@@ -559,10 +565,41 @@ document.getElementById('footNote').innerHTML=
   'Duplicates are screened against real prior-claim history. No figures are hand-authored; this page '+
   'polls /api/debates every 8s.';
 
+// Live readiness badge — is this app's configured case release still the
+// runnable one, and is the tenant reachable? Catches a drifted release key
+// (which silently breaks "submit → case") BEFORE a live demo, not during.
+async function loadHealth(){
+  const el = document.getElementById('uipHealth');
+  if(!el) return;
+  try {
+    const r = await fetch('/api/health/uipath', {cache:'no-store'});
+    const h = await r.json();
+    el.classList.remove('ok','degraded','down');
+    if(h.status === 'ok'){
+      el.classList.add('ok');
+      el.textContent = '● Orchestrator · case ready';
+      el.title = `Tenant reachable · case release key matches (${(h.case_release_configured||'').slice(0,8)}…)`;
+    } else if(h.status === 'degraded'){
+      el.classList.add('degraded');
+      el.textContent = '● release key drifted';
+      el.title = `Tenant reachable but the configured case release key is no longer runnable.\nconfigured ${h.case_release_configured}\nrunnable  ${h.case_release_runnable||'(none found)'}`;
+    } else {
+      el.classList.add('down');
+      el.textContent = '● tenant unreachable';
+      el.title = h.error || 'Could not reach Orchestrator.';
+    }
+  } catch(e){
+    el.classList.remove('ok','degraded'); el.classList.add('down');
+    el.textContent = '● health check failed';
+  }
+}
+
 renderKPIs();
 renderTabs();
 loadData();
+loadHealth();
 setInterval(loadData, 8000);
+setInterval(loadHealth, 30000);
 </script>
 </body>
 </html>
