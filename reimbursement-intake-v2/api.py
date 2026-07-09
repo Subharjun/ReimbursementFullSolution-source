@@ -125,9 +125,15 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 _basic_auth = HTTPBasic(auto_error=False)
 
 
+# Admin auth is OPEN by default (demo). To re-enable Basic auth, set
+# ADMIN_AUTH_ENABLED=1 AND ADMIN_USER/ADMIN_PASSWORD on the server.
+ADMIN_AUTH_ENABLED = os.getenv("ADMIN_AUTH_ENABLED", "").strip() == "1"
+
+
 def require_admin(credentials: HTTPBasicCredentials | None = Depends(_basic_auth)) -> str:
-    if not ADMIN_USER or not ADMIN_PASSWORD:
-        raise HTTPException(500, "Admin auth not configured — set ADMIN_USER and ADMIN_PASSWORD env vars")
+    # Open unless auth is explicitly enabled with configured credentials.
+    if not (ADMIN_AUTH_ENABLED and ADMIN_USER and ADMIN_PASSWORD):
+        return "open"
     ok = credentials is not None and secrets.compare_digest(
         credentials.username, ADMIN_USER
     ) and secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
@@ -1499,6 +1505,62 @@ async def health_uipath():
         _HEALTH_CACHE = result
         _HEALTH_TS = now
     return result
+
+
+@app.get("/api/health/pims")
+async def health_pims(job: str = ""):
+    """Diagnostic: what scopes does the app token ACTUALLY carry, and does the
+    Maestro pims_ element-executions API accept it? Decodes the token's `scope`
+    claim (no secret exposure — just the scope list) and makes one raw pims_ call,
+    returning the real status/body. This is how we tell whether the Traces.Api
+    grant reached the token and whether pims_ needs a different scope/permission.
+    """
+    out: dict = {"requested_scope_env": os.getenv("UIPATH_OAUTH_SCOPE", "(unset — using code default)")}
+    try:
+        token = _get_token()
+    except Exception as exc:
+        return {**out, "error": f"token fetch failed: {exc}"}
+
+    # Decode the JWT payload's scope claim (middle segment, base64url). Read-only.
+    try:
+        import base64
+        parts = token.split(".")
+        if len(parts) >= 2:
+            pad = parts[1] + "=" * (-len(parts[1]) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(pad).decode("utf-8", "replace"))
+            scope_claim = claims.get("scope") or claims.get("scp") or ""
+            scopes = scope_claim.split() if isinstance(scope_claim, str) else list(scope_claim or [])
+            out["token_scopes"] = sorted(scopes)
+            # PIMS is the scope that authorizes the Maestro pims_ element-executions
+            # API (verified: a user token WITH it reaches pims_; Traces.Api does NOT).
+            out["has_pims"] = any(s.upper() == "PIMS" for s in scopes)
+    except Exception as exc:
+        out["scope_decode_error"] = str(exc)[:200]
+
+    # Pick a job to probe pims_ with.
+    if not job:
+        try:
+            jobs = await _list_recent_jobs(token, FOLDER_ID, top=5)
+            job = next((j.get("Key") for j in jobs if "mir" in (j.get("ReleaseName") or "").lower()), "") \
+                or (jobs[0].get("Key") if jobs else "")
+        except Exception:
+            job = ""
+    out["pims_job_tried"] = job
+
+    if job:
+        url = f"{UIPATH_BASE_URL}/pims_/api/v1/instances/{job}/element-executions"
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.get(url, headers={
+                    "Authorization": f"Bearer {token}",
+                    "x-uipath-folderkey": FOLDER_KEY,
+                    "Accept": "application/json",
+                })
+            out["pims_status"] = r.status_code
+            out["pims_body"] = r.text[:300]
+        except Exception as exc:
+            out["pims_error"] = str(exc)[:200]
+    return out
 
 
 @app.post("/api/submit")
