@@ -47,6 +47,16 @@ class AuthError(RuntimeError):
 _PREFERRED_SCOPE = "OR.Jobs OR.Execution OR.Tasks OR.Buckets OR.Folders.Read"
 _FALLBACK_SCOPE = "OR.Jobs OR.Execution OR.Buckets OR.Folders.Read"
 
+# To make the live case tracker work on Render, the External App needs Maestro/
+# Monitoring access so /api/case/{id}/progress can read the real element-executions
+# trail (Case jobs never flip their OR.Jobs State to Successful, so the job-state
+# fallback can't see completion). Set UIPATH_OAUTH_SCOPE on Render to the granted
+# string, e.g. "OR.Jobs OR.Execution OR.Tasks OR.Buckets OR.Folders.Read OR.Monitoring"
+# (the exact Maestro scope name is whatever the app registration lists — grant it
+# there first). If the extended string is rejected, auth degrades PROGRESSIVELY
+# through the tiers below instead of dropping straight to the lossy minimum, so a
+# wrong guess never silently strips OR.Tasks/OR.Folders.Read and breaks HITL.
+
 
 def _request_token(client_id: str, client_secret: str, scope: str) -> dict:
     data = {
@@ -69,15 +79,32 @@ def _request_token(client_id: str, client_secret: str, scope: str) -> dict:
 
 
 def _fetch_client_credentials_token(client_id: str, client_secret: str) -> tuple[str, float]:
-    scope = os.environ.get("UIPATH_OAUTH_SCOPE", _PREFERRED_SCOPE).strip()
-    try:
-        payload = _request_token(client_id, client_secret, scope)
-    except AuthError as e:
-        if "invalid_scope" in str(e) and scope != _FALLBACK_SCOPE:
-            print(f"[auth] scope '{scope}' rejected (invalid_scope) — retrying with '{_FALLBACK_SCOPE}'")
-            payload = _request_token(client_id, client_secret, _FALLBACK_SCOPE)
-        else:
+    # Progressive scope tiers, widest first: whatever is configured, then the known
+    # working preferred set, then the minimal known-good set. On invalid_scope we
+    # step DOWN one tier at a time, so adding an ungranted Maestro scope only costs
+    # that scope — it never collapses straight to the lossy minimum.
+    configured = os.environ.get("UIPATH_OAUTH_SCOPE", _PREFERRED_SCOPE).strip()
+    tiers: list[str] = []
+    for s in (configured, _PREFERRED_SCOPE, _FALLBACK_SCOPE):
+        if s and s not in tiers:
+            tiers.append(s)
+
+    payload = None
+    last_err: AuthError | None = None
+    for i, scope in enumerate(tiers):
+        try:
+            payload = _request_token(client_id, client_secret, scope)
+            if i:
+                print(f"[auth] using scope tier {i}: '{scope}'")
+            break
+        except AuthError as e:
+            last_err = e
+            if "invalid_scope" in str(e) and i < len(tiers) - 1:
+                print(f"[auth] scope '{scope}' rejected (invalid_scope) — trying narrower tier")
+                continue
             raise
+    if payload is None:  # pragma: no cover - defensive; loop either breaks or raises
+        raise last_err or AuthError("no scope tier succeeded")
     token = payload["access_token"]
     expires_in = float(payload.get("expires_in", 3600))
     return token, time.time() + expires_in - 60  # refresh 60s before actual expiry
