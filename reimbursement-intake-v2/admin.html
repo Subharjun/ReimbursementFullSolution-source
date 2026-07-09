@@ -119,6 +119,9 @@
   /* Pending human review — the detailed brief before an Approve/Reject (#6) */
   .review-item{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin:12px 0; background:var(--panel-2)}
   .review-item:first-child{margin-top:6px}
+  .review-item.orphan{padding:11px 14px; background:transparent; opacity:.72}
+  .review-item.orphan .review-head{margin:4px 0 10px; font-size:12px}
+  .review-item.orphan .review-actions{margin-top:8px}
   .review-top{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px}
   .review-top .who{font-weight:650; font-size:14px}
   .review-top .amt{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink)}
@@ -313,6 +316,28 @@ function renderHitl(items){
   if(!items.length){ el.innerHTML = '<div class="empty">Nothing awaiting human review right now.</div>'; return; }
   el.innerHTML = items.map(it => {
     const ex = it.explanation || {};
+
+    // Orphaned tasks (submitted in a prior server session) have no local claim/
+    // debate context — render them honestly instead of as "Unknown · 0".
+    if(!it.has_context){
+      const title = esc(it.title || 'Action Center task');
+      const link = it.review_link
+        ? `<a class="dl" href="${esc(it.review_link)}" target="_blank" rel="noopener">Open in Action Center ↗</a>` : '';
+      return `<div class="review-item orphan" id="hitl-${it.task_id}">
+        <div class="review-top">
+          <span class="who">${title}</span>
+          <span class="chip review">prior session</span>
+          <span class="meta">task ${it.task_id} · ${fmtTime(it.created_at)}</span>
+        </div>
+        <div class="review-head">Submitted before this server session — no local claim record, so the multi-agent brief isn't available here. Review it directly in Action Center.</div>
+        <div class="review-actions">
+          ${link}
+          <button class="btn-approve" onclick="decideHitl(${it.task_id},'approve')">✓ Approve</button>
+          <button class="btn-reject" onclick="decideHitl(${it.task_id},'reject')">✕ Reject</button>
+        </div>
+      </div>`;
+    }
+
     const sigs = (ex.signals||[]).map(s => `
       <div class="signal ${/Nyx/.test(s.who||'')?'redteam':''}">
         <div class="who">${esc(s.agent||'')}<span class="vd">${esc(s.verdict||'')}</span></div>
@@ -332,17 +357,18 @@ function renderHitl(items){
     const esc8 = ex.redteam_escalated ? `<div class="escalated">🕵️ The Adversarial Auditor forced this to a human — clean on the hard rules, but not clean enough to wave through.</div>` : '';
     const dissent = (ex.dissent||[]).length
       ? `<div class="review-head">Solo dissent: ${ex.dissent.map(d=>`${esc(d.role)} alone would <b>${esc(d.solo_verdict)}</b>`).join('; ')}</div>` : '';
+    const pending = (ex.signals||[]).length === 0;
     return `<div class="review-item" id="hitl-${it.task_id}">
       <div class="review-top">
         <span class="who">${esc(it.employee_name||'Unknown')}</span>
         <span class="amt">${esc(it.currency||'')} ${Number(it.amount||0).toLocaleString()}</span>
         <span>· ${esc(it.vendor||'')}</span>
-        ${verdictChip(ex.recommendation)}
+        ${pending ? '<span class="chip review">scoring…</span>' : verdictChip(ex.recommendation)}
         <span class="meta">${esc(it.case_id||'')} · ${fmtTime(it.created_at)}</span>
       </div>
       <div class="review-head"><b>Recommendation:</b> ${esc(ex.headline||it.rationale||'—')}</div>
       ${esc8}
-      <div class="signals">${sigs || '<div class="empty">Full debate not scored yet — showing the pre-flight guardrail screen.</div>'}</div>
+      ${pending ? '' : `<div class="signals">${sigs}</div>`}
       ${receipt}
       ${dissent}
       <div class="review-actions">
@@ -369,6 +395,12 @@ async function decideHitl(taskId, action){
         item.querySelector('.review-actions').innerHTML =
           `<span class="chip ${action==='approve'?'approve':'reject'}">${action}ed — sent to Action Center</span>`; }
       setTimeout(loadAll, 1200);
+    } else if(r.status === 409){
+      // Task already completed/reassigned (stale) — quietly drop it, no scary banner.
+      if(item){ item.style.opacity='.45';
+        item.querySelector('.review-actions').innerHTML =
+          `<span class="chip review">already actioned — removing</span>`; }
+      setTimeout(loadAll, 1000);
     } else {
       const body = await r.text().catch(()=> '');
       showError(`decide (task ${taskId}) → HTTP ${r.status}\n${body.slice(0,400)}`);

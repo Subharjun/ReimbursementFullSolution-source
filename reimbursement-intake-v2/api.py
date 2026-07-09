@@ -751,18 +751,27 @@ async def _list_pending_hitl_tasks(token: str) -> tuple[list[dict], str]:
         items.append({
             "task_id": tid,
             "case_id": sub.get("case_id", job_key),
+            "title": t.get("Title", ""),
+            # True only when this app instance actually submitted the claim, so the
+            # frontend knows whether it has real context or just an Orchestrator task
+            # left over from a prior session (which would otherwise render as
+            # "Unknown · 0" with an empty brief).
+            "has_context": bool(sub),
             "vendor": sub.get("vendor", ""),
             "amount": sub.get("amount", 0),
             "currency": sub.get("currency", ""),
             "employee_name": sub.get("employee_name", ""),
             "employee_email": sub.get("employee_email", ""),
+            "review_link": ACTION_CENTER_TASK_URL_TMPL.format(task_id=tid),
             "rationale": debate_rationale or f"Task: {t.get('Title', '')} (submitted outside this app instance — no local record)",
             # Detailed 3-signal (+ red team + receipt) brief so the reviewer decides
             # with the full picture in front of them (#6).
             "explanation": _hitl_explanation(sub, rec),
             "created_at": t.get("CreationTime"),
         })
-    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    # Items this app actually has context for float to the top (real, decidable
+    # claims); orphaned prior-session tasks sink below them.
+    items.sort(key=lambda x: (x.get("has_context", False), x.get("created_at") or ""), reverse=True)
     return items, ""
 
 
@@ -875,9 +884,18 @@ async def _decide_hitl_task(token: str, task_id: int, action: str, notes: str) -
             json={"taskId": task_id, "action": outcome, "data": {"reviewerNotes": notes}},
         )
     if complete_r.status_code != 204:
+        body = complete_r.text or ""
+        # errorCode 2402 / "no longer assigned to you" == the task was already
+        # completed or reassigned (typically a stale prior-session task). That is
+        # not a server fault — surface it as a clean 409 the UI can quietly drop.
+        if '"errorCode":2402' in body or "no longer assigned" in body.lower():
+            raise HTTPException(
+                409, f"Task {task_id} is already completed or reassigned — "
+                "it can no longer be actioned here. Refreshing the queue."
+            )
         raise HTTPException(
             502, f"CompleteAppTask failed for task {task_id} (folder {folder_id}): "
-            f"{complete_r.status_code} {complete_r.text[:300]}"
+            f"{complete_r.status_code} {body[:300]}"
         )
 
 
