@@ -60,6 +60,7 @@ from .agents import classify, policy_check, fraud_screen, roi, _to_float
 from .live_agents import (
     classify_live, policy_check_live, fraud_live, arbitrate_live, EXPECTED_LIVE_STAGES,
 )
+from .redteam import red_team_review, NYX
 
 # Live by default: every claim is scored by the ACTUAL deployed Orchestrator
 # processes (real HTTP jobs), not the local ports in agents.py. Set
@@ -230,6 +231,20 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
             text="No challenges raised, no violations on the books. We appear to be aligned.",
         ))
 
+    # Nyx, the Adversarial Auditor, closes the cross-examination by arguing the
+    # strongest honest case AGAINST auto-approval (Groq-powered, in-process so it
+    # adds no Orchestrator-job latency; deterministic heuristic if Groq is off).
+    # Monotonic: its effect is capped at "get a human" -- it can never approve or
+    # hard-reject on its own (applied at arbitration below).
+    red = red_team_review(claim, cls, frd, pol)
+    transcript.append(_turn(
+        NYX, "prosecute", round_no=2, confidence=red["confidence"],
+        text=(
+            red["argument"]
+            + ("" if red["pushes_to"] == "review" else " (I concede there's no case to force a review.)")
+        ),
+    ))
+
     # ==================== ROUND 3 - CONSENSUS ==================== #
     # The deterministic precedence is the compliance FLOOR + the offline fallback.
     # When live, the deployed ConsensusArbitrationAgent makes the final call on top
@@ -242,6 +257,20 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
         if arb:
             recommendation, path, rationale = arb["recommendation"], arb["path"], arb["rationale"]
             arb_source, arb_job = "live", arb["_job_id"]
+
+    # Apply Nyx monotonically: the adversary can only ever ESCALATE an
+    # otherwise-approvable outcome to a human review -- never soften a review/reject
+    # to an approval, and never manufacture a hard reject. So the ONLY move it can
+    # make is approve-family -> HITL_REVIEW.
+    redteam_escalated = False
+    if red["pushes_to"] == "review" and _family(recommendation) == "approve":
+        recommendation, path = "HITL_REVIEW", "hitl_review"
+        rationale = (
+            rationale.rstrip(".")
+            + f". Escalated to a human by the Adversarial Auditor ({red['focus']}) — "
+            "clean on the hard rules, but not clean enough to wave straight through."
+        )
+        redteam_escalated = True
 
     # What would each agent have decided ALONE? This is the multi-agent value
     # story: an agent in isolation can be wrong; the debate is what corrects it.
@@ -275,6 +304,9 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
         closing += f" Solo, {', '.join(d['role'] for d in dissent)} would have differed; the debate reconciled it."
     else:
         closing += " Unanimous — no agent dissented, solo or together."
+    if redteam_escalated:
+        closing += (f" 🕵️ The Adversarial Auditor forced a second look here — "
+                    f"the hard rules cleared, but Nyx's challenge ({red['focus']}) sent it to a human.")
     transcript.append(_turn(POLICY, "arbitrate", round_no=3, text=closing))
 
     # --- ROI (real model). Duplicate flips it from expected-value to full amount. #
@@ -291,6 +323,8 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
                   "process": "FraudIntegrityAgent"},
         "arbitration": {"source": arb_source, "job_id": arb_job,
                         "process": "ConsensusArbitrationAgent"},
+        "redteam": {"source": red["source"], "job_id": None,
+                    "process": "Nyx (Groq red team)", "pushes_to": red["pushes_to"]},
     }
     live_jobs = [a["job_id"] for a in agents_engine.values() if a["source"] == "live" and a["job_id"]]
     if not live:
@@ -314,11 +348,14 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
         "dissent": dissent,
         "solo_verdicts": solo,
         "debate_changed_outcome": debate_changed_outcome,
+        "redteam": red,
+        "redteam_escalated": redteam_escalated,
         "evidence": {
             "classifier": cls,
             "fraud": {k: frd[k] for k in ("fraud_score", "integrity_risk", "recommendation",
                                           "duplicate_detected", "split_claim_detected", "flags")},
             "policy": pol,
+            "redteam": red,
         },
         "savings": savings,
         "transcript": transcript,

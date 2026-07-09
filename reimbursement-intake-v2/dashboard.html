@@ -8,7 +8,7 @@
   :root{
     --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
     --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580;
-    --classifier:#6366f1; --fraud:#f0475f; --policy:#12b5a5;
+    --classifier:#6366f1; --fraud:#f0475f; --policy:#12b5a5; --redteam:#d946ef;
     --approve:#2dd4a7; --review:#f5a524; --reject:#f0475f;
     --accent:#38bdf8;
     --grid:rgba(255,255,255,.028);
@@ -128,7 +128,7 @@
   @keyframes rise{to{opacity:1; transform:none}}
   .av{width:34px; height:34px; border-radius:10px; flex:none; display:grid; place-items:center; font-size:17px;
     border:1.5px solid; background:var(--panel-2)}
-  .av.classifier{border-color:var(--classifier)} .av.fraud{border-color:var(--fraud)} .av.policy{border-color:var(--policy)}
+  .av.classifier{border-color:var(--classifier)} .av.fraud{border-color:var(--fraud)} .av.policy{border-color:var(--policy)} .av.redteam{border-color:var(--redteam)}
   .bubble{flex:1; min-width:0}
   .bwho{display:flex; align-items:center; gap:8px; margin-bottom:3px; flex-wrap:wrap}
   .bwho .nm{font-size:12.5px; font-weight:600}
@@ -138,6 +138,7 @@
   .stance.concede{color:var(--review); border-color:color-mix(in oklab,var(--review) 40%,var(--line))}
   .stance.arbitrate{color:var(--accent); border-color:color-mix(in oklab,var(--accent) 40%,var(--line))}
   .stance.agree{color:var(--approve); border-color:color-mix(in oklab,var(--approve) 40%,var(--line))}
+  .stance.prosecute{color:var(--redteam); border-color:color-mix(in oklab,var(--redteam) 45%,var(--line))}
   .btext{font-size:13px; color:var(--ink)}
   .btext strong{font-weight:650}
   .btext .men{font-family:var(--mono); font-size:12px; padding:0 2px; border-radius:4px; background:var(--panel-2); color:var(--muted)}
@@ -160,7 +161,18 @@
   .solo .sh{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:10px}
   .solo-row{display:flex; align-items:center; gap:10px; padding:6px 0}
   .solo-row .sa{width:24px; height:24px; border-radius:7px; display:grid; place-items:center; font-size:12px; border:1.4px solid; background:var(--panel-2)}
-  .sa.classifier{border-color:var(--classifier)} .sa.fraud{border-color:var(--fraud)} .sa.policy{border-color:var(--policy)}
+  .sa.classifier{border-color:var(--classifier)} .sa.fraud{border-color:var(--fraud)} .sa.policy{border-color:var(--policy)} .sa.redteam{border-color:var(--redteam)}
+
+  /* Adversarial Auditor (Nyx) card in the side panel */
+  .redteam-card{border:1px solid color-mix(in oklab,var(--redteam) 40%,var(--line)); border-radius:12px; padding:13px 15px;
+    background:color-mix(in oklab,var(--redteam) 7%,var(--panel-2))}
+  .redteam-card .sh{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--redteam); margin-bottom:8px; display:flex; align-items:center; gap:7px}
+  .redteam-card .rt-arg{font-size:12.5px; color:var(--ink); line-height:1.5}
+  .redteam-card .rt-meta{font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .redteam-card .rt-pill{padding:2px 8px; border-radius:6px; border:1px solid var(--line)}
+  .redteam-card .rt-pill.push{color:var(--redteam); border-color:color-mix(in oklab,var(--redteam) 40%,var(--line))}
+  .redteam-card .rt-esc{margin-top:9px; padding:7px 10px; border-radius:8px; font-size:11.5px;
+    background:color-mix(in oklab,var(--review) 14%,transparent); color:var(--review)}
   .solo-row .sr-name{font-size:12px; font-weight:550; flex:1}
   .solo-row .sr-v{font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:6px}
   .sr-v.approve{background:color-mix(in oklab,var(--approve) 16%,transparent); color:var(--approve)}
@@ -244,6 +256,7 @@
       <span class="lg"><i style="background:var(--classifier)"></i> Cleo · Classifier</span>
       <span class="lg"><i style="background:var(--fraud)"></i> Rex · Fraud Sentinel</span>
       <span class="lg"><i style="background:var(--policy)"></i> Pola · Policy Arbiter</span>
+      <span class="lg"><i style="background:var(--redteam)"></i> Nyx · Adversarial Auditor</span>
     </div>
     <div id="footNote"></div>
   </footer>
@@ -458,6 +471,25 @@ function caughtText(c){
   return '';
 }
 
+function redteamCard(c){
+  const rt = c.redteam;
+  if(!rt || !rt.argument) return '';
+  const pushed = rt.pushes_to === 'review';
+  const src = rt.source === 'groq' ? 'Groq' : 'heuristic';
+  const esc = c.redteam_escalated
+    ? `<div class="rt-esc">🕵️ Forced a second look — clean on the hard rules, but Nyx's challenge sent it to a human.</div>` : '';
+  return `<div class="redteam-card">
+    <div class="sh">🕵️ Nyx · Adversarial Auditor</div>
+    <div class="rt-arg">${(rt.argument||'').replace(/</g,'&lt;')}</div>
+    <div class="rt-meta">
+      <span class="rt-pill push">${pushed ? 'argues for review' : 'no case to force review'}</span>
+      <span class="rt-pill">focus: ${(rt.focus||'—').replace(/</g,'&lt;')}</span>
+      <span class="rt-pill">${rt.confidence||'—'} · ${src}</span>
+    </div>
+    ${esc}
+  </div>`;
+}
+
 function renderSide(c){
   const side = document.getElementById('side');
   const fraud = c.evidence.fraud;
@@ -488,6 +520,7 @@ function renderSide(c){
       <div class="sh">If each agent ruled alone</div>
       ${soloRows}
     </div>
+    ${redteamCard(c)}
     <div class="evi">
       <div class="sh">Fraud evidence</div>
       <div class="gauge">

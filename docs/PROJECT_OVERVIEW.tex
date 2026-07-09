@@ -1,0 +1,199 @@
+\documentclass[10pt]{article}
+
+% =====================================================================
+%  ClaimAgent — Overview Deck
+%  Full-bleed, bold-typography "quote card" deck
+%  (portrait teal story cards -> closing mission card).
+%  NOTE: uses TikZ "remember picture, overlay" -> compile TWICE.
+% =====================================================================
+
+% ---------- Packages ----------
+\usepackage[paperwidth=6.2in, paperheight=11in, margin=0pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage[hidelinks]{hyperref}
+\usetikzlibrary{calc}
+
+\graphicspath{{screenshots/}}
+
+% ---------- Colors ----------
+\definecolor{topteal}{HTML}{3C8698}
+\definecolor{botteal}{HTML}{22606F}
+\definecolor{tealtint}{HTML}{2F7383}
+
+% ---------- Hyperref meta ----------
+\hypersetup{pdftitle={ClaimAgent — AI-Orchestrated Reimbursements}}
+
+% ---------- Page setup ----------
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\pagenumbering{gobble}
+
+% ---------- Fonts for cards ----------
+\newcommand{\quotefont}{\fontsize{26}{32}\bfseries\selectfont}
+\newcommand{\namefont}{\fontsize{15}{18}\bfseries\selectfont\color{white}}
+\newcommand{\rolefont}{\fontsize{11}{15}\selectfont\color{white!82}}
+
+% ---------- Full-page teal background ----------
+\newcommand{\tealbg}{%
+  \shade[top color=topteal, bottom color=botteal]
+    (current page.south west) rectangle (current page.north east);
+}
+
+% ---------- Decorative squares + dots (top corners) ----------
+\newcommand{\decorate}{%
+  \fill[white,opacity=0.05] ($(current page.north west)+(1.2cm,-3.4cm)$) rectangle ++(1.9cm,1.9cm);
+  \fill[white,opacity=0.04] ($(current page.north west)+(2.8cm,-2.2cm)$) rectangle ++(1.2cm,1.2cm);
+  \fill[white,opacity=0.05] ($(current page.north west)+(0.6cm,-1.7cm)$) rectangle ++(1.0cm,1.0cm);
+  \foreach \i in {0,...,3}
+    {\fill[white,opacity=0.40]
+       ($(current page.north east)+(-3.2cm+\i*0.55cm,-1.9cm)$) rectangle ++(0.28cm,0.28cm);}
+}
+
+% ---------- Teal pull-quote card (text only, vertically centred) ----------
+% #1 quote  #2 label  #3 subtitle
+\newcommand{\quotecard}[3]{%
+\begin{tikzpicture}[remember picture, overlay]
+  \tealbg
+  \decorate
+  \node[anchor=west, text width=12.9cm, align=left, inner sep=0]
+    at ($(current page.west)+(1.4cm,2.4cm)$)
+    {\color{white}\quotefont ``#1''\\[18pt]{\namefont #2}\\[4pt]{\rolefont #3}};
+\end{tikzpicture}%
+\clearpage
+}
+
+% ---------- Teal pull-quote card with a large screenshot below ----------
+% #1 quote  #2 label  #3 subtitle  #4 image
+\newcommand{\quotecardpic}[4]{%
+\begin{tikzpicture}[remember picture, overlay]
+  \tealbg
+  \decorate
+  \node[anchor=north west, text width=12.9cm, align=left, inner sep=0]
+    at ($(current page.north west)+(1.4cm,-4.4cm)$)
+    {\color{white}\quotefont ``#1''\\[16pt]{\namefont #2}\\[4pt]{\rolefont #3}};
+  \node[anchor=south, inner sep=6pt, fill=white, rounded corners=3pt]
+    at ($(current page.south)+(0,2.0cm)$)
+    {\includegraphics[width=13.4cm]{#4}};
+\end{tikzpicture}%
+\clearpage
+}
+
+\begin{document}
+
+% =====================================================================
+%  COVER (teal, project-only)
+% =====================================================================
+\begin{tikzpicture}[remember picture, overlay]
+  \tealbg
+  \decorate
+
+  % top wordmarks
+  \node[anchor=north west, white] at ($(current page.north west)+(1.4cm,-1.6cm)$)
+    {\bfseries\large ClaimAgent};
+  \node[anchor=north east, white] at ($(current page.north east)+(-1.4cm,-1.6cm)$)
+    {\bfseries\large UiPath\; AgentHack 2026};
+
+  % headline
+  \node[anchor=west, text width=13.2cm, align=left]
+    at ($(current page.west)+(1.4cm,3.4cm)$)
+    {\color{white}\fontsize{40}{47}\bfseries\selectfont What we shipped, and what listening changed.};
+
+  % supporting line
+  \node[anchor=north west, text width=12.8cm, align=left]
+    at ($(current page.west)+(1.4cm,-1.2cm)$)
+    {\color{white!88}\fontsize{15}{21}\selectfont
+      An end-to-end, agentic expense-reimbursement system running on real
+      UiPath Orchestrator jobs. Version~1 proved the pipeline; Version~2
+      is what user, team, and mentor feedback changed.};
+
+  % footer note
+  \node[anchor=south west, white!65] at ($(current page.south west)+(1.4cm,1.3cm)$)
+    {\fontsize{9.5}{13}\selectfont AgentHack 2026 \; ·\; Track 1 — Reimbursement};
+\end{tikzpicture}%
+\clearpage
+
+% =====================================================================
+%  QUOTE CARDS
+% =====================================================================
+
+\quotecard%
+  {Reading a receipt is the easy part. Deciding whether to trust it --- and knowing when to pull a human in --- is the real work.}%
+  {The core thesis}%
+  {Why ClaimAgent exists}
+
+\quotecardpic%
+  {Don't trust one model's opinion. Make four agents state their case, cross-examine each other, and record every disagreement before anything is decided.}%
+  {The Consensus Engine}%
+  {Four agents · a three-round debate · one auditable verdict}%
+  {5.png}
+
+\quotecard%
+  {Let the AI make the call stricter --- never softer. A hard compliance rule can be sharpened by a model, but it can never be soft-overridden.}%
+  {Monotonic guardrails}%
+  {Sharper judgment with zero added compliance risk}
+
+\quotecardpic%
+  {People just wanted to know they'd been heard. So now the moment a claim arrives, its owner gets an email --- no more ``did this go through?''}%
+  {Version 2 · from users}%
+  {Automatic receiver notifications}%
+  {1.png}
+
+\quotecardpic%
+  {We asked ourselves where a submitter's claim actually stood --- and realised they couldn't see it. Now they watch it move, stage by stage, in real time.}%
+  {Version 2 · from the team}%
+  {A live status tracker off the real Maestro Case cursor}%
+  {2.png}
+
+\quotecardpic%
+  {A mentor pointed straight at the clunky review handoff. Now reviewers get a purpose-built email with full context and a one-click Approve or Reject.}%
+  {Version 2 · from a mentor}%
+  {A customised human-in-the-loop approval email}%
+  {3.png}
+
+\quotecardpic%
+  {Leadership asked one question: is this actually saving us anything? So we built the dashboard that answers it --- time saved, FTE saved, real ROI.}%
+  {Version 2 · for leadership}%
+  {The manager \& director dashboard}%
+  {4.png}
+
+% =====================================================================
+%  CLOSING / MISSION CARD
+% =====================================================================
+\begin{tikzpicture}[remember picture, overlay]
+  \tealbg
+
+  % emblem
+  \node[minimum size=1.6cm, fill=white, rounded corners=5pt, text=botteal]
+    at ($(current page.north)+(0,-8.4cm)$) {\bfseries\Huge C};
+
+  % wordmark
+  \node[anchor=north, white] at ($(current page.north)+(0,-10.4cm)$)
+    {\bfseries\LARGE ClaimAgent};
+
+  % mission
+  \node[anchor=north, text width=12cm, align=center]
+    at ($(current page.north)+(0,-12.0cm)$)
+    {\color{white}\fontsize{15}{22}\selectfont
+      ClaimAgent takes a reimbursement from a public form through
+      digitisation, AI classification, fraud screening, policy checks,
+      human review, payout, and notification --- on real UiPath
+      Orchestrator jobs, with every decision explainable and auditable.};
+
+  % button
+  \node[anchor=north, fill=white, rounded corners=5pt, inner xsep=13pt, inner ysep=8pt]
+    at ($(current page.north)+(0,-16.6cm)$)
+    {\href{https://reimbursement-intake-v2.onrender.com}{\bfseries\color{botteal} See the live demo}};
+
+  % source link
+  \node[anchor=north, white!75] at ($(current page.north)+(0,-18.2cm)$)
+    {\fontsize{9}{12}\selectfont
+      \href{https://github.com/Subharjun/ReimbursementFullSolution-source}{github.com/Subharjun/ReimbursementFullSolution-source}};
+\end{tikzpicture}%
+\clearpage
+
+\end{document}

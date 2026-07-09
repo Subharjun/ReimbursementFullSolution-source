@@ -52,6 +52,9 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from consensus.debate import run_debate
+from consensus.preview import fast_preview
+from consensus.detectors import compute_integrity
+from consensus.corroborate import corroborate_receipt
 from consensus import savings as _savings
 
 load_dotenv()
@@ -739,6 +742,7 @@ async def _list_pending_hitl_tasks(token: str) -> tuple[list[dict], str]:
         sub = _SUBMISSIONS.get(job_key, {})
         _TASK_CASE[tid] = sub.get("case_id", job_key)
         debate_rationale = ""
+        rec = None
         if sub.get("case_id"):
             with _DEBATES_LOCK:
                 rec = next((d for d in _DEBATES if d.get("case_id") == sub["case_id"]), None)
@@ -753,10 +757,95 @@ async def _list_pending_hitl_tasks(token: str) -> tuple[list[dict], str]:
             "employee_name": sub.get("employee_name", ""),
             "employee_email": sub.get("employee_email", ""),
             "rationale": debate_rationale or f"Task: {t.get('Title', '')} (submitted outside this app instance — no local record)",
+            # Detailed 3-signal (+ red team + receipt) brief so the reviewer decides
+            # with the full picture in front of them (#6).
+            "explanation": _hitl_explanation(sub, rec),
             "created_at": t.get("CreationTime"),
         })
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return items, ""
+
+
+def _hitl_explanation(sub: dict, rec: dict | None) -> dict:
+    """Assemble the detailed, reviewer-facing 'why is this in front of me' brief so
+    an Approve/Reject is an informed decision, not a coin toss (#6).
+
+    Pulls the three core agent findings (Classifier, Fraud, Policy) plus the
+    Adversarial Auditor from the observational debate record when it has landed,
+    and always the submit-time guardrail signals + receipt corroboration. Degrades
+    gracefully when the full debate hasn't been scored yet.
+    """
+    guard = sub.get("guardrail") or {}
+    signals: list[dict] = []
+    evidence = (rec or {}).get("evidence") or {}
+
+    cls = evidence.get("classifier") or {}
+    if cls:
+        factors = (cls.get("high_factors") or []) + (cls.get("medium_factors") or [])
+        signals.append({
+            "agent": "Cleo — Classifier",
+            "verdict": f"{cls.get('risk_score', '?')} risk · {cls.get('classification_confidence', '?')} confidence",
+            "detail": (f"Read as a {cls.get('expense_type', 'expense')}. "
+                       + ("Factors: " + ", ".join(factors) if factors else "No adverse factors on the read.")),
+        })
+
+    frd = evidence.get("fraud") or (guard.get("fraud") or {})
+    if frd:
+        flag_titles = [f.get("title") or f.get("code") for f in frd.get("flags", [])]
+        signals.append({
+            "agent": "Rex — Fraud Sentinel",
+            "verdict": f"{frd.get('integrity_risk', guard.get('risk_score', '?'))} "
+                       f"({frd.get('fraud_score', '?')}/100) → {frd.get('recommendation', 'review')}",
+            "detail": ("Integrity flags: " + "; ".join(flag_titles) if flag_titles
+                       else "No fraud signals against this claimant's prior-claim history.")
+                      + (" Confirmed duplicate." if frd.get("duplicate_detected") else "")
+                      + (" Split-claim pattern." if frd.get("split_claim_detected") else ""),
+        })
+
+    pol = evidence.get("policy") or {}
+    if pol:
+        viol = pol.get("policy_violations") or []
+        signals.append({
+            "agent": "Pola — Policy Arbiter",
+            "verdict": pol.get("routing_decision", "?"),
+            "detail": (f"Spend limit {pol.get('spend_limit', 0):,.0f}, "
+                       f"{'within limit' if pol.get('within_spend_limit') else 'OVER limit'}. "
+                       + ("Violations: " + ", ".join(viol) if viol else "No policy violations.")),
+        })
+
+    red = (rec or {}).get("redteam") or {}
+    if red.get("argument"):
+        signals.append({
+            "agent": "Nyx — Adversarial Auditor",
+            "verdict": ("argues for review" if red.get("pushes_to") == "review" else "no case to force review"),
+            "detail": red.get("argument"),
+        })
+
+    corr = guard.get("corroboration") or {}
+    receipt_check = None
+    if corr:
+        receipt_check = {
+            "ocr_confidence": guard.get("ocr_confidence", corr.get("ocr_confidence")),
+            "corroborated": corr.get("corroborated"),
+            "method": corr.get("method"),
+            "mismatches": corr.get("mismatches", []),
+            "note": corr.get("note"),
+        }
+
+    return {
+        "recommendation": (rec or {}).get("recommendation"),
+        "headline": (rec or {}).get("rationale")
+                    or "Awaiting the full multi-agent debate; showing the pre-flight guardrail screen.",
+        "signals": signals,
+        "receipt_check": receipt_check,
+        "dissent": (rec or {}).get("dissent") or [],
+        "redteam_escalated": bool((rec or {}).get("redteam_escalated")),
+        "guardrail_inputs": {
+            "risk_score": guard.get("risk_score"),
+            "duplicate_detected": guard.get("duplicate_detected"),
+            "ocr_confidence": guard.get("ocr_confidence"),
+        },
+    }
 
 
 async def _decide_hitl_task(token: str, task_id: int, action: str, notes: str) -> None:
@@ -802,6 +891,13 @@ async def _decide_hitl_task(token: str, task_id: int, action: str, notes: str) -
 _DEBATES_LOCK = threading.Lock()
 _DEBATES: list[dict] = []
 _MAX_DEBATES = 30
+
+# Instant "first read" previews keyed by case_id (#5). Written the moment a
+# background debate starts (sub-second, all-local + Groq phrasing) so /dashboard
+# can show a verdict immediately instead of a blank card for the ~140s the four
+# real Orchestrator jobs take. Superseded by the full record when it lands.
+_PREVIEWS: dict[str, dict] = {}
+_MAX_PREVIEWS = 60
 
 # Raw claim dicts (oldest->newest) behind the debates, kept so each new debate
 # can screen for duplicates against the real prior-claim history — that is what
@@ -1192,11 +1288,30 @@ def _run_consensus_debate_observe(claim: dict) -> None:
     live = os.environ.get("CONSENSUS_OBSERVE_LIVE", "1") != "0"
     with _DEBATES_LOCK:
         history = list(_DEBATE_CLAIM_HISTORY)
+
+    # Instant first read (#5): computed before the slow live jobs so /dashboard has
+    # a real, defensible verdict to show in <1s. Best-effort; never blocks the debate.
+    case_id = claim.get("case_id") or "(no id)"
+    try:
+        preview = fast_preview(claim, history)
+        with _DEBATES_LOCK:
+            _PREVIEWS[case_id] = {**preview, "case_id": case_id, "at": time.time()}
+            if len(_PREVIEWS) > _MAX_PREVIEWS:
+                for k in list(_PREVIEWS)[:-_MAX_PREVIEWS]:
+                    _PREVIEWS.pop(k, None)
+        print(f"[consensus] preview for {case_id}: {preview['recommendation']} "
+              f"({preview['headline_source']}, {preview['elapsed_ms']}ms)")
+    except Exception as exc:
+        preview = None
+        print(f"[consensus] preview failed for {case_id}: {exc}")
+
     try:
         result = run_debate(claim, history, live=live)
     except Exception as exc:
-        print(f"[consensus] debate failed for {claim.get('case_id')}: {exc}")
+        print(f"[consensus] debate failed for {case_id}: {exc}")
         return
+    if preview is not None:
+        result["preview"] = preview
     print(f"[consensus] {claim.get('case_id')} scored via engine="
           f"{result.get('engine', {}).get('mode', '?')} jobs={result.get('engine', {}).get('live_job_ids')}")
     _assemble_debate_record(result, claim, time.time())
@@ -1206,6 +1321,7 @@ def _run_consensus_debate_observe(claim: dict) -> None:
         del _DEBATES[_MAX_DEBATES:]
         _DEBATE_CLAIM_HISTORY.append(claim)
         del _DEBATE_CLAIM_HISTORY[:-_MAX_DEBATES]
+        _PREVIEWS.pop(case_id, None)  # full record now supersedes the instant preview
     print(f"[consensus] debate stored for {claim.get('case_id')} -> {result['recommendation']}")
 
 
@@ -1424,6 +1540,47 @@ async def submit(
             attachment_name = await _upload_to_bucket(token, receipt.filename, receipt_raw)
             document_attached = True
 
+    # ── Real guardrail inputs (#1/#2) ──────────────────────────────────────────
+    # The Case's Guardrail stage branches on riskScore (enum Low/Medium/High),
+    # duplicateDetected (bool) and ocrConfidence (float) — but the app used to send
+    # placeholders ("", False, 1.0) on EVERY claim, so the guardrail always ran
+    # blind. Here we compute the truth: the deterministic fraud floor over real
+    # prior-claim history, plus a pre-flight receipt corroboration. This is
+    # app-code only (populating declared inputs) — it does NOT mutate the Case.
+    # Set CASE_REAL_GUARDRAIL_INPUTS=0 to fall back to the legacy placeholders.
+    risk_score_in: str = ""
+    duplicate_in = False
+    ocr_conf_in = 1.0
+    guardrail_screen: dict | None = None
+    guardrail_corr: dict | None = None
+    if os.environ.get("CASE_REAL_GUARDRAIL_INPUTS", "1") != "0":
+        with _DEBATES_LOCK:
+            _hist = list(_DEBATE_CLAIM_HISTORY)
+        screen_claim = {
+            "vendor": vendor.strip(), "amount": amt, "currency": currency,
+            "date": date, "employee_email": employeeEmail.strip(), "case_id": case_id,
+        }
+        try:
+            guardrail_screen = compute_integrity(screen_claim, _hist)
+        except Exception as exc:
+            print(f"[guardrail] fraud screen failed for {case_id}: {exc}")
+        try:
+            guardrail_corr = corroborate_receipt(
+                receipt_raw, receipt_original_name, {"vendor": vendor, "amount": amt}
+            )
+        except Exception as exc:
+            print(f"[guardrail] receipt corroboration failed for {case_id}: {exc}")
+
+        risk_score_in = (guardrail_screen or {}).get("integrity_risk", "Low") or "Low"
+        duplicate_in = bool((guardrail_screen or {}).get("duplicate_detected"))
+        # Only lower OCR confidence when we can actually READ the receipt and it
+        # disagrees — never punish an image receipt our pre-flight can't parse (the
+        # Case's own ReceiptExtractor handles those downstream).
+        if guardrail_corr and guardrail_corr.get("corroborated") is False:
+            ocr_conf_in = 0.4
+            if risk_score_in == "Low":
+                risk_score_in = "Medium"  # a receipt/form mismatch deserves a human
+
     case_inputs = {
         "employeeEmail": employeeEmail.strip(),
         "employeeManagerEmail": managerEmail.strip(),
@@ -1432,10 +1589,10 @@ async def submit(
         "expenseAmount": amt,
         "expenseCurrency": currency,
         "expenseTypeConfirmed": expenseType,
-        "riskScore": "",
+        "riskScore": risk_score_in,
         "documentAttached": document_attached,
-        "ocrConfidence": 1.0,
-        "duplicateDetected": False,
+        "ocrConfidence": ocr_conf_in,
+        "duplicateDetected": duplicate_in,
         "businessPurposeValid": True,
     }
 
@@ -1455,6 +1612,15 @@ async def submit(
                 "employee_name": employeeName,
                 "employee_email": employeeEmail,
                 "expense_type": expenseType,
+                # Guardrail signals computed at submit — surfaced to the human
+                # reviewer (#6) so an Approve/Reject is an informed decision.
+                "guardrail": {
+                    "risk_score": risk_score_in,
+                    "duplicate_detected": duplicate_in,
+                    "ocr_confidence": ocr_conf_in,
+                    "fraud": guardrail_screen,
+                    "corroboration": guardrail_corr,
+                },
             }
             if len(_SUBMISSIONS) > _MAX_SUBMISSIONS:
                 oldest = next(iter(_SUBMISSIONS))
@@ -1704,6 +1870,49 @@ async def get_debates():
 def get_latest_debate():
     with _DEBATES_LOCK:
         return _DEBATES[0] if _DEBATES else {}
+
+
+# ── Fast preview (#5) — instant first read while the ~140s live jobs run ────────
+@app.get("/api/consensus/preview")
+def list_previews():
+    """All in-flight instant previews (case_ids whose full live debate hasn't
+    landed yet). The dashboard polls this so a fresh submission shows a verdict in
+    <1s instead of a blank card for the two minutes the real jobs take."""
+    with _DEBATES_LOCK:
+        items = sorted(_PREVIEWS.values(), key=lambda p: p.get("at", 0), reverse=True)
+    return {
+        "generated_by": (
+            "Instant local-deterministic first read (sub-second), phrased by Groq. "
+            "Advisory only — the authoritative record is the full 4-agent live debate "
+            "that replaces it when its Orchestrator jobs finish."
+        ),
+        "previews": items,
+    }
+
+
+@app.get("/api/consensus/preview/{case_id}")
+def get_preview(case_id: str):
+    """The instant preview for one case if its full debate hasn't landed yet;
+    otherwise the full record (which carries the preview under `preview`)."""
+    with _DEBATES_LOCK:
+        if case_id in _PREVIEWS:
+            return {"status": "preview", **_PREVIEWS[case_id]}
+        rec = next((d for d in _DEBATES if d.get("case_id") == case_id), None)
+    if rec:
+        return {"status": "final", "recommendation": rec.get("recommendation"),
+                "preview": rec.get("preview"), "case_id": case_id}
+    return {"status": "unknown", "case_id": case_id}
+
+
+@app.post("/api/consensus/preview")
+def compute_preview(claim: dict = Body(...)):
+    """Compute an instant first read for an ad-hoc claim posted as JSON (demo/probe).
+    Sub-second; Groq phrases it, deterministic logic decides it."""
+    if not isinstance(claim, dict) or not claim:
+        return {"error": "POST a claim JSON body (vendor, amount, currency, date, employee_email)."}
+    with _DEBATES_LOCK:
+        history = list(_DEBATE_CLAIM_HISTORY)
+    return fast_preview(claim, history)
 
 
 # ── Proof endpoint — resolve a Consensus job id to its REAL Orchestrator record ─
