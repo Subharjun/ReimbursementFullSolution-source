@@ -47,7 +47,7 @@ import resend
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
@@ -56,6 +56,14 @@ from consensus.preview import fast_preview
 from consensus.detectors import compute_integrity
 from consensus.corroborate import corroborate_receipt
 from consensus import savings as _savings
+from consensus import boardroom
+from consensus.copilot import ask_committee
+from consensus.whatif import simulate as whatif_simulate
+from consensus import ledger as _ledger
+from consensus.network import build_graph as _build_fraud_graph
+from consensus.vision import extract_receipt as _extract_receipt
+from consensus import adjudication as _adjudication
+from consensus import reconcile as _reconcile
 
 load_dotenv()
 
@@ -682,7 +690,10 @@ async def _list_recent_jobs(token: str, folder_id: str, top: int = 30) -> list[d
     url = (
         f"{UIPATH_BASE_URL}/orchestrator_/odata/Jobs"
         f"?$orderby=Id desc&$top={top}"
-        "&$select=Id,Key,ReleaseName,State,StartTime,EndTime,CreationTime,InputArguments,Info"
+        # ParentJobKey links every stage's child job back to its case, which is
+        # how we recover the values the Case actually adjudicated (reconcile.py).
+        "&$select=Id,Key,ReleaseName,State,StartTime,EndTime,CreationTime,"
+        "InputArguments,Info,ParentJobKey"
     )
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(url, headers=_hdrs(token, folder_id))
@@ -863,10 +874,18 @@ def _hitl_explanation(sub: dict, rec: dict | None) -> dict:
     }
 
 
-async def _decide_hitl_task(token: str, task_id: int, action: str, notes: str) -> None:
+async def _decide_hitl_task(
+    token: str, task_id: int, action: str, notes: str, data: dict | None = None
+) -> None:
     """Real Approve/Reject against Action Center — AssignTasks then
     CompleteAppTask, same call shape validated manually against this exact
-    app/case. Raises HTTPException on failure."""
+    app/case. Raises HTTPException on failure.
+
+    `data` carries the Reviewer Cockpit's structured adjudication (decision,
+    reason code, approved amount, citation, override justification) alongside
+    the free-text note. The Case only branches on Approve/Reject, so the
+    nuance rides in the task payload rather than needing the Case to change —
+    which is why the cockpit can be richer than the deployed case plan."""
     folder_id = _TASK_FOLDER.get(task_id)
     if not folder_id:
         # Not seen by a recent /pending-hitl poll — refresh once to learn its folder.
@@ -887,7 +906,8 @@ async def _decide_hitl_task(token: str, task_id: int, action: str, notes: str) -
         complete_r = await client.post(
             f"{UIPATH_BASE_URL}/orchestrator_/tasks/AppTasks/CompleteAppTask",
             headers=headers,
-            json={"taskId": task_id, "action": outcome, "data": {"reviewerNotes": notes}},
+            json={"taskId": task_id, "action": outcome,
+                  "data": {"reviewerNotes": notes, **(data or {})}},
         )
     if complete_r.status_code != 204:
         body = complete_r.text or ""
@@ -1122,6 +1142,173 @@ async def _fetch_job_inputs(token: str, job_id: int, key: str) -> dict:
     return parsed
 
 
+# ---------------------------------------------------------------------------
+# Reconciliation: what the Case ACTUALLY adjudicated (see consensus/reconcile.py)
+#
+# Every stage of the Case runs as a child job carrying ParentJobKey = the case
+# job key, and a child's InputArguments are the resolved values the Case handed
+# it. That makes the email-side truth readable with plain OR.Jobs — no Maestro,
+# no pims_, no new scope. This is the only path we have to the values the money
+# actually moved on, since the app's own InputArguments never reach payment.
+# ---------------------------------------------------------------------------
+_CASE_RECON: dict[str, dict] = {}
+_RECON_TTL = 45.0
+
+
+async def _fetch_case_children(token: str, case_key: str) -> list[dict]:
+    """Child jobs of one case, each with its resolved InputArguments."""
+    url = (
+        f"{UIPATH_BASE_URL}/orchestrator_/odata/Jobs"
+        f"?$filter=ParentJobKey%20eq%20{case_key}"
+        "&$select=Id,Key,ReleaseName,State,ParentJobKey&$top=30"
+    )
+    rows: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, headers=_hdrs(token, FOLDER_ID))
+        if r.status_code != 200:
+            return []
+        rows = r.json().get("value") or []
+    except Exception:
+        return []
+
+    out = []
+    for j in rows:
+        key = j.get("Key") or ""
+        # _fetch_job_inputs caches forever — a job's inputs never change once
+        # it is created, so a case that has settled costs zero calls to re-read.
+        inputs = await _fetch_job_inputs(token, j.get("Id"), key)
+        out.append({
+            "id": j.get("Id"), "key": key, "release": j.get("ReleaseName"),
+            "state": j.get("State"), "inputs": inputs,
+        })
+    return out
+
+
+async def _fetch_case_job_inputs(token: str, case_key: str) -> dict:
+    """A case job's own trigger-side InputArguments, by key.
+
+    Needed because a case may exist without an in-memory _SUBMISSIONS record —
+    after a restart, or when it was started by a direct StartJobs rather than
+    through /api/submit. The list projection nulls InputArguments, so resolve
+    the key to its numeric Id first and use the single-entity GET.
+    """
+    if case_key in _JOB_INPUTS:
+        return _JOB_INPUTS[case_key]
+    url = (
+        f"{UIPATH_BASE_URL}/orchestrator_/odata/Jobs"
+        f"?$filter=Key%20eq%20{case_key}&$select=Id,Key&$top=1"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, headers=_hdrs(token, FOLDER_ID))
+        if r.status_code != 200:
+            return {}
+        rows = r.json().get("value") or []
+        if not rows:
+            return {}
+        return await _fetch_job_inputs(token, rows[0]["Id"], case_key)
+    except Exception:
+        return {}
+
+
+async def _reconcile_case(token: str, case_key: str, submitted: dict) -> dict:
+    """Divergence record for one case: submitted (trigger) vs adjudicated (email).
+
+    Cached. Once we've read it from the payout job the answer is final — the
+    money already moved, nothing downstream can change those values — so that
+    result is cached permanently. A pre-payout read (policy) is only cached for
+    _RECON_TTL, because the payout job may appear at any moment and supersede it.
+    """
+    if not case_key:
+        return _reconcile.compare(submitted, None)
+    hit = _CASE_RECON.get(case_key)
+    now = time.time()
+    if hit and (hit["div"].get("definitive") or now - hit["at"] < _RECON_TTL):
+        return hit["div"]
+
+    children = await _fetch_case_children(token, case_key)
+    adjudicated = _reconcile.adjudicated_from_children(children)
+    div = _reconcile.compare(submitted, adjudicated)
+    _CASE_RECON[case_key] = {"div": div, "at": now}
+    if len(_CASE_RECON) > 200:
+        del _CASE_RECON[next(iter(_CASE_RECON))]
+    return div
+
+
+async def _reconcile_from_jobs(
+    token: str, case_jobs: list[dict], all_jobs: list[dict]
+) -> dict[str, dict]:
+    """Reconcile a batch of case jobs using an already-fetched job list.
+
+    The admin poll already holds 200 jobs, and every stage's child is in there
+    (they share the folder). So we never re-list — we only pay for the
+    money-path child's InputArguments, which cache forever.
+    """
+    by_parent: dict[str, list[dict]] = {}
+    money_path = {r for r, _ in _reconcile.MONEY_PATH_SOURCES}
+    for j in all_jobs:
+        pk = j.get("ParentJobKey")
+        if pk and j.get("ReleaseName") in money_path:
+            by_parent.setdefault(pk, []).append(j)
+
+    wanted = [
+        j for cj in case_jobs
+        for j in by_parent.get(cj.get("Key") or "", [])
+        if (j.get("Key") or "") not in _JOB_INPUTS and j.get("Id")
+    ]
+    if wanted:
+        await asyncio.gather(*[
+            _fetch_job_inputs(token, j.get("Id"), j.get("Key") or "") for j in wanted
+        ])
+
+    out: dict[str, dict] = {}
+    for cj in case_jobs:
+        key = cj.get("Key") or ""
+        children = [
+            {"key": j.get("Key"), "release": j.get("ReleaseName"),
+             "state": j.get("State"), "inputs": _JOB_INPUTS.get(j.get("Key") or "", {})}
+            for j in by_parent.get(key, [])
+        ]
+        case_inp = _JOB_INPUTS.get(key, {})
+        submitted = {
+            "amount": case_inp.get("expenseAmount"),
+            "currency": case_inp.get("expenseCurrency"),
+            "expense_type": case_inp.get("expenseTypeConfirmed"),
+        }
+        out[key] = _reconcile.compare(
+            submitted, _reconcile.adjudicated_from_children(children)
+        )
+    return out
+
+
+def _reconciliation_summary(divergence: dict[str, dict]) -> dict:
+    """Fleet-level answer to 'is what we show what the Case pays?'"""
+    known = [d for d in divergence.values() if d.get("known")]
+    diverged = [d for d in known if d.get("material")]
+    return {
+        "checked": len(divergence),
+        "observable": len(known),
+        "diverged": len(diverged),
+        "clean": len(known) - len(diverged),
+        "note": (
+            "Cases where the Case Management flow acted on values other than the "
+            "ones this app submitted. Expected to be non-zero while the intake "
+            "email drives the money path — see consensus/reconcile.py."
+        ),
+    }
+
+
+def _job_key_for_case_id(case_id: str) -> str:
+    """Our own REIMB-… case id back to the Orchestrator case job key."""
+    if not case_id:
+        return ""
+    for jk, s in _SUBMISSIONS.items():
+        if s.get("case_id") == case_id:
+            return jk
+    return ""
+
+
 def _iso_to_epoch(s: str | None) -> float | None:
     if not s:
         return None
@@ -1175,12 +1362,14 @@ def _live_audit(
     jobs: list[dict],
     debate_cases: list[dict],
     inputs_by_key: dict[str, dict] | None = None,
+    divergence_by_key: dict[str, dict] | None = None,
     limit: int = 15,
 ) -> list[dict]:
     """One row per real MirCaseClone case run (newest first). Enrich with the
     debate record when present (adds the consensus verdict + a downloadable
     full audit.json); otherwise surface the live case outcome from the job."""
     inputs_by_key = inputs_by_key or {}
+    divergence_by_key = divergence_by_key or {}
     deb_by_id = {r.get("case_id"): r for r in debate_cases}
     rows: list[dict] = []
     for j in jobs:
@@ -1199,10 +1388,22 @@ def _live_audit(
         vendor = sub.get("vendor") or inp.get("expenseVendor") or ""
         amount = sub.get("amount") if sub.get("amount") is not None else inp.get("expenseAmount")
         currency = sub.get("currency") or inp.get("expenseCurrency") or ""
+
+        # The title must name the claim the CASE acted on, not the one we sent.
+        # An audit row reading "15,000 lodging" beside a 206 medical payout is
+        # how the split stayed invisible for as long as it did.
+        div = divergence_by_key.get(key) or {}
+        adj = {f["field"]: f["adjudicated"] for f in div.get("fields", [])}
+        if div.get("material"):
+            amount = adj.get("amount", amount)
+            currency = adj.get("currency") or currency
         if vendor and amount is not None:
             title = f"{vendor} · {currency} {amount}".strip()
         else:
             title = vendor or f"Case {key[:8]}"
+        if div.get("material"):
+            title += "  ⚠ case-adjudicated"
+
         deb = deb_by_id.get(sub.get("case_id")) or deb_by_id.get(key)
         rows.append({
             "case_id": (deb or {}).get("case_id") or key,
@@ -1211,6 +1412,8 @@ def _live_audit(
             "action": {"status": j.get("State")},
             "submitted_at": _iso_to_epoch(j.get("CreationTime") or j.get("StartTime")),
             "has_full_record": deb is not None,
+            "diverged": bool(div.get("material")),
+            "divergence": div or None,
         })
         if len(rows) >= limit:
             break
@@ -1316,6 +1519,12 @@ def _run_consensus_debate_observe(claim: dict) -> None:
     # Instant first read (#5): computed before the slow live jobs so /dashboard has
     # a real, defensible verdict to show in <1s. Best-effort; never blocks the debate.
     case_id = claim.get("case_id") or "(no id)"
+    boardroom.emit(case_id, "convened", claim={
+        "case_id": case_id,
+        "vendor": claim.get("vendor"), "amount": claim.get("amount"),
+        "currency": claim.get("currency"), "expense_type": claim.get("expense_type"),
+        "employee_name": claim.get("employee_name"),
+    }, live=live)
     try:
         preview = fast_preview(claim, history)
         with _DEBATES_LOCK:
@@ -1330,9 +1539,13 @@ def _run_consensus_debate_observe(claim: dict) -> None:
         print(f"[consensus] preview failed for {case_id}: {exc}")
 
     try:
-        result = run_debate(claim, history, live=live)
+        result = run_debate(
+            claim, history, live=live,
+            on_event=lambda et, **p: boardroom.emit(case_id, et, p),
+        )
     except Exception as exc:
         print(f"[consensus] debate failed for {case_id}: {exc}")
+        boardroom.emit(case_id, "adjourned", ok=False, error=str(exc)[:200])
         return
     if preview is not None:
         result["preview"] = preview
@@ -1346,6 +1559,16 @@ def _run_consensus_debate_observe(claim: dict) -> None:
         _DEBATE_CLAIM_HISTORY.append(claim)
         del _DEBATE_CLAIM_HISTORY[:-_MAX_DEBATES]
         _PREVIEWS.pop(case_id, None)  # full record now supersedes the instant preview
+    boardroom.emit(case_id, "adjourned", ok=True, recommendation=result["recommendation"])
+    _ledger.record("committee_verdict", case_id, {
+        "recommendation": result["recommendation"],
+        "rationale": result["rationale"],
+        "unanimous": result["unanimous"],
+        "dissent": result["dissent"],
+        "engine_mode": (result.get("engine") or {}).get("mode"),
+        "live_job_ids": (result.get("engine") or {}).get("live_job_ids"),
+        "redteam_escalated": result.get("redteam_escalated"),
+    })
     print(f"[consensus] debate stored for {claim.get('case_id')} -> {result['recommendation']}")
 
 
@@ -1563,6 +1786,21 @@ async def health_pims(job: str = ""):
     return out
 
 
+# ── Receipt vision auto-extraction — "drop a receipt, the form fills itself" ──
+@app.post("/api/extract-receipt")
+async def extract_receipt_endpoint(receipt: UploadFile = File(...)):
+    """Read a receipt image with Groq vision and return prefill fields for the
+    intake form. Advisory only — the claimant confirms/edits before submit, and
+    a failure returns ok:false so the form stays manual. Never touches the Case."""
+    try:
+        raw = await receipt.read()
+    except Exception:
+        return {"ok": False, "reason": "could not read the uploaded file"}
+    if len(raw) > 10 * 1024 * 1024:
+        return {"ok": False, "reason": "file too large (max 10 MB)"}
+    return _extract_receipt(raw, receipt.filename, receipt.content_type)
+
+
 @app.post("/api/submit")
 async def submit(
     background_tasks: BackgroundTasks,
@@ -1705,6 +1943,14 @@ async def submit(
             if len(_SUBMISSIONS) > _MAX_SUBMISSIONS:
                 oldest = next(iter(_SUBMISSIONS))
                 del _SUBMISSIONS[oldest]
+        _ledger.record("submission", case_id, {
+            "job_key": job_id, "vendor": vendor, "amount": amt,
+            "currency": currency, "expense_type": expenseType,
+            "employee": employeeName,
+            "guardrail": {"risk_score": risk_score_in,
+                          "duplicate_detected": duplicate_in,
+                          "ocr_confidence": ocr_conf_in},
+        })
 
     # Watch for the case's Human-Review task and email the manager a direct
     # Action Center link the moment it appears, so they can Approve/Reject
@@ -1848,7 +2094,7 @@ async def test_manager_notice(to: str, _: str = Depends(require_admin)):
         employee_name="Subharjun Bose",
         employee_email="subharjun.bose2805@gmail.com",
         case_id="CASE-PREVIEW-MGR",
-        expense_type="Meals & Entertainment",
+        expense_type="food",
         vendor="Taj Hotels",
         amount=8500.0,
         currency="INR",
@@ -1896,7 +2142,7 @@ async def test_reviewer_notice(to: str, _: str = Depends(require_admin)):
         claimant_name="Subharjun Bose",
         claimant_email="subharjun.bose2805@gmail.com",
         case_id="CASE-PREVIEW-REV",
-        expense_type="Meals & Entertainment",
+        expense_type="food",
         vendor="Taj Hotels",
         amount=8500.0,
         currency="INR",
@@ -1950,6 +2196,84 @@ async def get_debates():
 def get_latest_debate():
     with _DEBATES_LOCK:
         return _DEBATES[0] if _DEBATES else {}
+
+
+# ── Live Agent Boardroom — the debate streamed turn-by-turn over SSE ──────────
+def _sse_lines(case_id: str):
+    """SSE frames for one boardroom session: full replay, then live events until
+    the session adjourns. Heartbeat comments keep proxies from cutting the pipe."""
+    for ev in boardroom.subscribe(case_id):
+        if ev.get("type") == "_heartbeat":
+            yield ": hb\n\n"
+        else:
+            yield f"data: {json.dumps(ev, default=str)}\n\n"
+
+
+@app.get("/api/consensus/stream/{case_id}")
+def consensus_stream(case_id: str):
+    """Watch one case's debate live. Late joiners get the full story so far,
+    then each new stage/turn/verdict event the instant the debate thread emits it."""
+    return StreamingResponse(
+        _sse_lines(case_id), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/consensus/stream")
+def consensus_stream_latest():
+    """Pointer to the most recently convened boardroom (the dashboard's
+    'watch live' button asks this, then opens the stream above)."""
+    return {"case_id": boardroom.latest_session_id()}
+
+
+# ── Ask the Committee — grounded claimant copilot ─────────────────────────────
+@app.post("/api/copilot/{ref}")
+async def copilot_ask(ref: str, body: dict = Body(...)):
+    """Answer one claimant question about one claim. `ref` is the case job key
+    (what the tracker page holds) or the CASE-xxxx id. Grounded strictly in the
+    claim's real record — the debate transcript, policy book, and live progress.
+    Explains only; never decides."""
+    question = (body or {}).get("question", "")
+
+    # Resolve ref -> (job_key, case_id, claim facts)
+    job_key, case_id, claim = None, ref, {}
+    with _PENDING_HITL_LOCK:
+        sub = _SUBMISSIONS.get(ref)
+        if sub:
+            job_key, case_id = ref, sub.get("case_id", ref)
+        else:
+            for jk, s in _SUBMISSIONS.items():
+                if s.get("case_id") == ref:
+                    job_key, sub = jk, s
+                    break
+        if sub:
+            claim = {k: sub.get(k) for k in
+                     ("case_id", "vendor", "amount", "currency",
+                      "employee_name", "expense_type")}
+
+    # The committee's record (full debate, else the instant preview)
+    with _DEBATES_LOCK:
+        record = next((d for d in _DEBATES if d.get("case_id") == case_id), None)
+        if record is None:
+            record = _PREVIEWS.get(case_id)
+    if not claim and record:
+        claim = {**(record.get("claim") or {}), "case_id": case_id}
+
+    # Live case progress (real Orchestrator trail / job state), best-effort
+    progress = None
+    if job_key:
+        try:
+            progress = await case_progress(job_key)
+        except Exception:
+            progress = None
+
+    known = bool(claim or record or progress)
+    if not known:
+        return {"answer": "I don't have a record for that claim in this session. "
+                          "If you just submitted it, give me a few seconds and ask again.",
+                "source": "static", "case_id": case_id}
+    out = ask_committee(question, claim, record, progress)
+    return {**out, "case_id": case_id}
 
 
 # ── Fast preview (#5) — instant first read while the ~140s live jobs run ────────
@@ -2217,16 +2541,23 @@ async def admin_overview(_admin: str = Depends(require_admin)):
             for j in to_fetch if j.get("Id") and j.get("Key")
         ])
 
+    # Reconcile the same bounded set. The 200-job list we already hold contains
+    # every child, so this costs only the money-path children's InputArguments —
+    # cached forever, one small burst on a cold cache.
+    divergence = await _reconcile_from_jobs(token, case_jobs, jobs)
+
     return {
         "folder_id": FOLDER_ID,
         "totals": _live_totals(jobs, len(pending), cases),
         "pending_hitl_count": len(pending),
         "pending_hitl_error": pending_error,
         "recent_jobs": jobs[:30],
-        "audit": _live_audit(jobs, cases, inputs_by_key=_JOB_INPUTS),
+        "audit": _live_audit(jobs, cases, inputs_by_key=_JOB_INPUTS,
+                             divergence_by_key=divergence),
         "job_health": job_health,
         "releases": releases,
         "agreement": _agreement_summary(),
+        "reconciliation": _reconciliation_summary(divergence),
     }
 
 
@@ -2302,7 +2633,308 @@ async def decide_hitl(task_id: int, body: dict = Body(...), _admin: str = Depend
     await _decide_hitl_task(token, task_id, action, notes)
     # Score this human call against the AI's recommendation for the same claim.
     _record_human_decision(task_id, action)
+    _ledger.record("human_decision", _TASK_CASE.get(task_id), {
+        "task_id": task_id, "action": action, "notes": notes[:500],
+    })
     return {"task_id": task_id, "action": action, "status": "decided"}
+
+
+# ── Reviewer Cockpit — structured, validated, attributable human review ──────
+# The stock Action Center app gives a reviewer two buttons and a text box. This
+# surface gives them the full committee dossier, four decisions instead of two,
+# a closed reason vocabulary checked against the decision, and an override gate
+# that makes contradicting the agents deliberate rather than silent. It writes
+# back to the SAME real Action Center task (_decide_hitl_task) — it is a richer
+# cockpit over the real control, not a simulation of one.
+
+async def _claim_context(token: str, task_id: int) -> dict:
+    """Server-side truth for a task: the submission, the debate record, the
+    amount the reviewer's arithmetic is checked against, the AI lean, and the
+    divergence between what this app sent and what the Case adjudicated.
+
+    The validator reads the amount and the AI lean from HERE, never from the
+    request body — otherwise a client could edit the number it is checked
+    against and the override gate would be advisory rather than real.
+
+    `claimed` is the AUTHORITATIVE amount, not the submitted one. When the Case
+    is observably acting on a different figure (the email-intake split — see
+    consensus/reconcile.py) the Case's figure wins, because a partial approval
+    is a claim about money that will actually move. Validating 8,000-of-15,000
+    when the Case is about to pay 206 is arithmetic about a claim that does not
+    exist.
+    """
+    case_id = _TASK_CASE.get(task_id, "")
+    sub = next((s for s in _SUBMISSIONS.values() if s.get("case_id") == case_id), {})
+    rec = None
+    if case_id:
+        with _DEBATES_LOCK:
+            rec = next((d for d in _DEBATES if d.get("case_id") == case_id), None)
+    lean = _ai_lean(rec) if rec else "uncertain"
+
+    submitted = {
+        "amount": sub.get("amount"),
+        "currency": sub.get("currency"),
+        "expense_type": sub.get("expense_type"),
+    }
+    div = await _reconcile_case(token, _job_key_for_case_id(case_id), submitted)
+    claimed, basis = _reconcile.authoritative_amount(sub.get("amount"), div)
+    return {
+        "sub": sub, "rec": rec, "claimed": claimed, "lean": lean,
+        "divergence": div, "amount_basis": basis,
+        "submitted_amount": float(sub.get("amount") or 0),
+    }
+
+
+@app.get("/api/reconcile/{case_job_key}")
+async def reconcile_case(case_job_key: str):
+    """What this app SENT vs what the Case ACTUALLY adjudicated, for one case.
+
+    Open + read-only, deliberately: this is the endpoint that lets anyone check
+    whether a number we displayed is the number the Case paid on. Reads the
+    money-path child job's real InputArguments via ParentJobKey — plain OR.Jobs,
+    no Maestro dependency (handoff §6.11).
+    """
+    token = _get_token()
+    sub = _SUBMISSIONS.get(case_job_key, {})
+    if sub:
+        submitted = {
+            "amount": sub.get("amount"), "currency": sub.get("currency"),
+            "expense_type": sub.get("expense_type"),
+        }
+    else:
+        # Survives a restart, and covers a case started outside this app (a
+        # direct StartJobs): fall back to the case job's OWN InputArguments,
+        # which are the same trigger-side values /api/submit would have sent.
+        # The Jobs LIST projection strips InputArguments, so we must resolve
+        # the key to its numeric Id and do the single-entity GET (see the note
+        # on _JOB_INPUTS).
+        inp = await _fetch_case_job_inputs(token, case_job_key)
+        submitted = {
+            "amount": inp.get("expenseAmount"), "currency": inp.get("expenseCurrency"),
+            "expense_type": inp.get("expenseTypeConfirmed"),
+        }
+    div = await _reconcile_case(token, case_job_key, submitted)
+    return {"case_job_key": case_job_key, "submitted": submitted, "divergence": div}
+
+
+@app.get("/api/review/catalog")
+def review_catalog():
+    """The decision/reason vocabulary + limits. Served from the same module the
+    validator uses, so the form and the rules cannot drift apart."""
+    return _adjudication.reason_catalog()
+
+
+@app.get("/api/review/queue")
+async def review_queue():
+    """Pending human reviews, each with the full committee brief already
+    attached (reuses the same real GetTasksAcrossFolders path /admin used)."""
+    token = _get_token()
+    items, err = await _list_pending_hitl_tasks(token)
+    for it in items:
+        ctx = await _claim_context(token, it["task_id"])
+        it["ai_lean"] = ctx["lean"]
+        it["claimed_amount"] = ctx["claimed"]
+        it["amount_basis"] = ctx["amount_basis"]
+        # Surfaced on the queue, not just the dossier: a reviewer should be able
+        # to see which claims the Case is reading differently before they open one.
+        it["diverged"] = bool(ctx["divergence"].get("material"))
+    return {"items": items, "error": err, "count": len(items)}
+
+
+@app.get("/api/review/{task_id}")
+async def review_dossier(task_id: int):
+    """Everything a reviewer needs to decide this one claim, in one payload:
+    the claim, the committee's four agent findings + Nyx, the receipt check,
+    the dissent, what the AI leaned toward, and whether a given decision would
+    count as an override."""
+    token = _get_token()
+    items, err = await _list_pending_hitl_tasks(token)
+    task = next((t for t in items if t["task_id"] == task_id), None)
+    if not task:
+        raise HTTPException(404, f"Task {task_id} is not in the pending queue "
+                                 "— it may already be decided.")
+    ctx = await _claim_context(token, task_id)
+    sub, lean, div = ctx["sub"], ctx["lean"], ctx["divergence"]
+    adj = {f["field"]: f["adjudicated"] for f in div.get("fields", [])}
+    return {
+        "task": task,
+        "claim": {
+            "case_id": task.get("case_id"),
+            "employee_name": sub.get("employee_name") or task.get("employee_name"),
+            "employee_email": sub.get("employee_email") or task.get("employee_email"),
+            "vendor": sub.get("vendor") or task.get("vendor"),
+            # The authoritative figures — what the Case will actually pay on.
+            "amount": ctx["claimed"],
+            "currency": adj.get("currency") or sub.get("currency")
+                        or task.get("currency") or "INR",
+            "expense_date": sub.get("expense_date"),
+            "expense_type": adj.get("expense_type") or sub.get("expense_type"),
+            "business_purpose": sub.get("business_purpose"),
+            "manager_email": sub.get("manager_email"),
+        },
+        # What /api/submit sent, kept distinct and never silently substituted.
+        # If these disagree with `claim`, the reviewer is entitled to know that
+        # the form they are looking at is not the claim the Case is paying.
+        "submitted": {
+            "amount": ctx["submitted_amount"],
+            "currency": sub.get("currency"),
+            "expense_type": sub.get("expense_type"),
+        },
+        "divergence": div,
+        "amount_basis": ctx["amount_basis"],
+        "explanation": task.get("explanation") or {},
+        "ai_lean": lean,
+        "has_context": task.get("has_context", False),
+        "review_link": task.get("review_link"),
+        # So the form can warn about an override BEFORE the reviewer submits,
+        # rather than bouncing them on a 422 after they've written everything.
+        "override_map": {
+            d: _adjudication.is_override(d, lean) for d in _adjudication.DECISIONS
+        },
+        "error": err,
+    }
+
+
+@app.post("/api/review/{task_id}/decide")
+async def review_decide(task_id: int, body: dict = Body(...)):
+    """Validate a structured review, then complete the REAL Action Center task.
+
+    Order matters: validate first (422 with field errors, nothing touched),
+    then complete the task, and only record to the ledger once Orchestrator has
+    actually accepted it — so the tamper-evident chain never claims a decision
+    that did not land.
+    """
+    # Token first: the arithmetic is now checked against the amount the CASE
+    # adjudicated, and reading that needs a tenant call. Validation still runs
+    # before any mutating call, so a 422 leaves Orchestrator untouched.
+    token = _get_token()
+    ctx = await _claim_context(token, task_id)
+    rec, claimed, lean = ctx["rec"], ctx["claimed"], ctx["lean"]
+    result = _adjudication.validate(body, claimed_amount=claimed, ai_lean=lean)
+    if not result["ok"]:
+        return JSONResponse(
+            status_code=422,
+            content={"ok": False, "errors": result["errors"],
+                     "ai_lean": lean, "claimed_amount": claimed,
+                     "amount_basis": ctx["amount_basis"],
+                     "divergence": ctx["divergence"]},
+        )
+
+    clean = result["clean"]
+    note = _adjudication.summarize(clean)
+    await _decide_hitl_task(
+        token, task_id, clean["outcome"], note,
+        data={
+            "decision": clean["decision"],
+            "reasonCode": clean["reason_code"],
+            "reasonLabel": clean["reason_label"],
+            "approvedAmount": clean["approved_amount"],
+            "claimedAmount": clean["claimed_amount"],
+            "conditions": clean["conditions"],
+            "policyCitation": clean["policy_citation"],
+            "reviewer": clean["reviewer"],
+            "isOverride": clean["is_override"],
+            "aiRecommendation": (rec or {}).get("recommendation"),
+        },
+    )
+
+    _record_human_decision(task_id, clean["outcome"])
+    block = _ledger.record("human_decision", _TASK_CASE.get(task_id), {
+        "task_id": task_id,
+        "decision": clean["decision"],
+        "outcome": clean["outcome"],
+        "reason_code": clean["reason_code"],
+        "approved_amount": clean["approved_amount"],
+        "claimed_amount": clean["claimed_amount"],
+        "conditions": clean["conditions"],
+        "policy_citation": clean["policy_citation"],
+        "reviewer": clean["reviewer"],
+        "is_override": clean["is_override"],
+        "ai_lean": clean["ai_lean"],
+        "ai_recommendation": (rec or {}).get("recommendation"),
+        "notes": (clean["notes"] or "")[:500],
+        # The chain records WHICH claim was decided and on whose authority the
+        # figure rests. Chaining `claimed_amount` alone was the dangerous part:
+        # it hashed the app's number into evidence while the Case paid another,
+        # producing an audit trail that was tamper-evident AND wrong.
+        "amount_basis": ctx["amount_basis"],
+        "submitted_amount": ctx["submitted_amount"],
+        "case_diverged": bool(ctx["divergence"].get("material")),
+        "divergence": ctx["divergence"] if ctx["divergence"].get("diverged") else None,
+    })
+    return {
+        "ok": True, "task_id": task_id, "decision": clean["decision"],
+        "outcome": clean["outcome"], "is_override": clean["is_override"],
+        "summary": note,
+        "amount_basis": ctx["amount_basis"],
+        "divergence": ctx["divergence"],
+        "ledger_block": {"index": block["index"], "hash": block["hash"]},
+    }
+
+
+@app.get("/review")
+def review_page():
+    return FileResponse(
+        str(Path(__file__).parent / "review.html"),
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
+
+
+# ── Decision Ledger — tamper-evident provenance chain ─────────────────────────
+@app.get("/api/ledger")
+def ledger_chain(limit: int = 200):
+    """The hash-chained decision ledger: every material event (submission,
+    committee verdict, human decision) as a block whose hash covers its payload
+    AND the previous hash — retro-editing history breaks the chain visibly."""
+    return {"verification": _ledger.verify(), "chain": _ledger.chain(limit)}
+
+
+@app.get("/api/ledger/verify")
+def ledger_verify():
+    """Re-walk the whole chain and report the first broken link (if any)."""
+    return _ledger.verify()
+
+
+@app.get("/ledger")
+def ledger_page():
+    return FileResponse(
+        str(Path(__file__).parent / "ledger.html"),
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
+
+
+# ── Fraud Constellation — the claim-link network as a graph ──────────────────
+@app.get("/api/fraud/graph")
+async def fraud_graph():
+    """Nodes = real claims (the same history the fraud stage screens against);
+    edges = the detectors' own duplicate/split/same-vendor relationships.
+    A duplicate ring shows up as a connected cluster."""
+    await _backfill_debates_if_empty()
+    with _DEBATES_LOCK:
+        records = list(_DEBATES)
+        known = {r.get("case_id") for r in records}
+        # history claims with no debate record still belong on the map
+        records += [c for c in _DEBATE_CLAIM_HISTORY if c.get("case_id") not in known]
+    return _build_fraud_graph(records)
+
+
+# ── What-if verdict simulator — the committee's rule surface, explorable ──────
+@app.post("/api/consensus/whatif")
+def consensus_whatif(body: dict = Body(...)):
+    """Run a hypothetical claim through the deterministic consensus core (the
+    same compliance floor the live agents are clamped to) and return the verdict
+    plus the exact amount boundaries where it flips. Observational only."""
+    claim = {
+        "vendor": (body.get("vendor") or "Simulated Vendor")[:80],
+        "amount": body.get("amount") or 0,
+        "currency": (body.get("currency") or "INR")[:8],
+        "expense_type": (body.get("expense_type") or "Travel")[:40],
+        "date": body.get("date") or time.strftime("%Y-%m-%d"),
+        "business_purpose": (body.get("business_purpose") or "")[:200],
+    }
+    with _DEBATES_LOCK:
+        history = list(_DEBATE_CLAIM_HISTORY) if body.get("against_history") else []
+    return whatif_simulate(claim, history)
 
 
 @app.get("/admin")

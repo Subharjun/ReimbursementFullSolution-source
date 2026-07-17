@@ -116,41 +116,6 @@
   .health-bar{display:flex; height:8px; border-radius:5px; overflow:hidden; width:140px; background:var(--panel-2)}
   .health-bar span{height:100%}
 
-  /* Pending human review — the detailed brief before an Approve/Reject (#6) */
-  .review-item{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin:12px 0; background:var(--panel-2)}
-  .review-item:first-child{margin-top:6px}
-  .review-item.orphan{padding:11px 14px; background:transparent; opacity:.72}
-  .review-item.orphan .review-head{margin:4px 0 10px; font-size:12px}
-  .review-item.orphan .review-actions{margin-top:8px}
-  .review-top{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px}
-  .review-top .who{font-weight:650; font-size:14px}
-  .review-top .amt{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink)}
-  .review-top .meta{font-family:var(--mono); font-size:11px; color:var(--faint); margin-left:auto}
-  .review-head{font-size:12.5px; color:var(--muted); margin:6px 0 12px; line-height:1.55}
-  .review-head b{color:var(--ink)}
-  .signals{display:grid; gap:8px; margin:10px 0}
-  .signal{display:grid; grid-template-columns:150px 1fr; gap:12px; padding:9px 11px; border:1px solid var(--line); border-radius:9px; background:var(--panel)}
-  .signal .who{font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:var(--muted)}
-  .signal .who .vd{display:block; margin-top:4px; color:var(--ink); font-size:11.5px; font-weight:600}
-  .signal .detail{font-size:12.5px; color:var(--ink); line-height:1.5}
-  .signal.redteam{border-color:color-mix(in oklab,var(--reject) 45%,var(--line))}
-  @media(max-width:620px){.signal{grid-template-columns:1fr}}
-  .receipt-check{margin:10px 0; padding:9px 12px; border-radius:9px; border:1px dashed var(--line); font-size:12px; color:var(--muted)}
-  .receipt-check.bad{border-color:var(--reject); color:var(--reject)}
-  .receipt-check.good{border-color:var(--approve)}
-  .escalated{margin:8px 0; padding:8px 12px; border-radius:9px; font-size:12px;
-    background:color-mix(in oklab,var(--review) 14%,transparent); color:var(--review)}
-  .review-actions{display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap}
-  .review-actions input{flex:1; min-width:180px; background:var(--panel); border:1px solid var(--line); color:var(--ink);
-    border-radius:8px; padding:8px 11px; font-family:var(--sans); font-size:12.5px}
-  .review-actions button{font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase;
-    border-radius:8px; padding:9px 16px; cursor:pointer; border:1px solid transparent; background:transparent; font-weight:600}
-  .review-actions button:disabled{opacity:.5; cursor:default}
-  .btn-approve{border-color:var(--approve); color:var(--approve)}
-  .btn-approve:hover:not(:disabled){background:color-mix(in oklab,var(--approve) 16%,transparent)}
-  .btn-reject{border-color:var(--reject); color:var(--reject)}
-  .btn-reject:hover:not(:disabled){background:color-mix(in oklab,var(--reject) 16%,transparent)}
-
   footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
 </style>
 </head>
@@ -163,6 +128,7 @@
       <div class="sub">live Orchestrator state — no Studio Web needed</div>
     </div>
     <div class="spacer"></div>
+    <a class="navlink" href="/review" target="_blank" rel="noopener">Reviewer cockpit →</a>
     <a class="navlink" href="/dashboard" target="_blank" rel="noopener">Debate console →</a>
     <div class="status"><span class="dot"></span> <span id="statusTxt">connecting…</span></div>
     <button class="tbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
@@ -171,14 +137,6 @@
   <div id="errBanner" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:10px; border:1px solid var(--reject); background:color-mix(in oklab,var(--reject) 12%,transparent); font-family:var(--mono); font-size:12px; color:var(--reject); white-space:pre-wrap; word-break:break-word;"></div>
 
   <div class="kpis" id="kpis"></div>
-
-  <section class="card" id="hitlCard" style="margin-bottom:16px">
-    <div class="hd">
-      <h2>Pending human review</h2>
-      <span class="hint" id="hitlHint">the full brief before you decide</span>
-    </div>
-    <div class="body"><div id="hitlList"></div></div>
-  </section>
 
   <div class="grid2">
     <section class="card">
@@ -302,116 +260,6 @@ function renderJobs(jobs){
   </tbody></table>`;
 }
 
-function verdictChip(rec){
-  const r = (rec||'').toUpperCase();
-  const cls = r.includes('REJECT') ? 'reject' : (r.includes('APPROVE')||r.includes('PROCEED')) ? 'approve' : 'review';
-  return `<span class="chip ${cls}">${esc((rec||'pending').replace(/_/g,' '))}</span>`;
-}
-
-function renderHitl(items){
-  const el = document.getElementById('hitlList');
-  const hint = document.getElementById('hitlHint');
-  items = items || [];
-  hint.textContent = items.length ? `${items.length} awaiting a decision` : 'the full brief before you decide';
-  if(!items.length){ el.innerHTML = '<div class="empty">Nothing awaiting human review right now.</div>'; return; }
-  el.innerHTML = items.map(it => {
-    const ex = it.explanation || {};
-
-    // Orphaned tasks (submitted in a prior server session) have no local claim/
-    // debate context — render them honestly instead of as "Unknown · 0".
-    if(!it.has_context){
-      const title = esc(it.title || 'Action Center task');
-      const link = it.review_link
-        ? `<a class="dl" href="${esc(it.review_link)}" target="_blank" rel="noopener">Open in Action Center ↗</a>` : '';
-      return `<div class="review-item orphan" id="hitl-${it.task_id}">
-        <div class="review-top">
-          <span class="who">${title}</span>
-          <span class="chip review">prior session</span>
-          <span class="meta">task ${it.task_id} · ${fmtTime(it.created_at)}</span>
-        </div>
-        <div class="review-head">Submitted before this server session — no local claim record, so the multi-agent brief isn't available here. Review it directly in Action Center.</div>
-        <div class="review-actions">
-          ${link}
-          <button class="btn-approve" onclick="decideHitl(${it.task_id},'approve')">✓ Approve</button>
-          <button class="btn-reject" onclick="decideHitl(${it.task_id},'reject')">✕ Reject</button>
-        </div>
-      </div>`;
-    }
-
-    const sigs = (ex.signals||[]).map(s => `
-      <div class="signal ${/Nyx/.test(s.who||'')?'redteam':''}">
-        <div class="who">${esc(s.agent||'')}<span class="vd">${esc(s.verdict||'')}</span></div>
-        <div class="detail">${esc(s.detail||'')}</div>
-      </div>`).join('');
-    const rc = ex.receipt_check;
-    let receipt = '';
-    if(rc){
-      const bad = rc.corroborated === false;
-      const good = rc.corroborated === true;
-      const conf = (rc.ocr_confidence==null) ? '—' : Math.round(rc.ocr_confidence*100)+'%';
-      const mm = (rc.mismatches||[]).length ? ' · ' + rc.mismatches.map(esc).join(' · ') : '';
-      receipt = `<div class="receipt-check ${bad?'bad':good?'good':''}">
-        🧾 Receipt check — OCR confidence <b>${conf}</b>${rc.method?(' · '+esc(rc.method)):''}${esc(mm)}
-        ${rc.note?('<br>'+esc(rc.note)):''}</div>`;
-    }
-    const esc8 = ex.redteam_escalated ? `<div class="escalated">🕵️ The Adversarial Auditor forced this to a human — clean on the hard rules, but not clean enough to wave through.</div>` : '';
-    const dissent = (ex.dissent||[]).length
-      ? `<div class="review-head">Solo dissent: ${ex.dissent.map(d=>`${esc(d.role)} alone would <b>${esc(d.solo_verdict)}</b>`).join('; ')}</div>` : '';
-    const pending = (ex.signals||[]).length === 0;
-    return `<div class="review-item" id="hitl-${it.task_id}">
-      <div class="review-top">
-        <span class="who">${esc(it.employee_name||'Unknown')}</span>
-        <span class="amt">${esc(it.currency||'')} ${Number(it.amount||0).toLocaleString()}</span>
-        <span>· ${esc(it.vendor||'')}</span>
-        ${pending ? '<span class="chip review">scoring…</span>' : verdictChip(ex.recommendation)}
-        <span class="meta">${esc(it.case_id||'')} · ${fmtTime(it.created_at)}</span>
-      </div>
-      <div class="review-head"><b>Recommendation:</b> ${esc(ex.headline||it.rationale||'—')}</div>
-      ${esc8}
-      ${pending ? '' : `<div class="signals">${sigs}</div>`}
-      ${receipt}
-      ${dissent}
-      <div class="review-actions">
-        <input id="notes-${it.task_id}" placeholder="Reviewer note (optional) — recorded with the decision">
-        <button class="btn-approve" onclick="decideHitl(${it.task_id},'approve')">✓ Approve</button>
-        <button class="btn-reject" onclick="decideHitl(${it.task_id},'reject')">✕ Reject</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function decideHitl(taskId, action){
-  const item = document.getElementById('hitl-'+taskId);
-  const btns = item ? item.querySelectorAll('button') : [];
-  btns.forEach(b => b.disabled = true);
-  const notes = (document.getElementById('notes-'+taskId)||{}).value || '';
-  try{
-    const r = await fetch(`/api/admin/hitl/${taskId}/decide`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action, notes})
-    });
-    if(r.ok){
-      if(item){ item.style.opacity='.55';
-        item.querySelector('.review-actions').innerHTML =
-          `<span class="chip ${action==='approve'?'approve':'reject'}">${action}ed — sent to Action Center</span>`; }
-      setTimeout(loadAll, 1200);
-    } else if(r.status === 409){
-      // Task already completed/reassigned (stale) — quietly drop it, no scary banner.
-      if(item){ item.style.opacity='.45';
-        item.querySelector('.review-actions').innerHTML =
-          `<span class="chip review">already actioned — removing</span>`; }
-      setTimeout(loadAll, 1000);
-    } else {
-      const body = await r.text().catch(()=> '');
-      showError(`decide (task ${taskId}) → HTTP ${r.status}\n${body.slice(0,400)}`);
-      btns.forEach(b => b.disabled = false);
-    }
-  }catch(e){
-    showError(`decide threw: ${e.message||e}`);
-    btns.forEach(b => b.disabled = false);
-  }
-}
-
 function showError(msg){
   const el = document.getElementById('errBanner');
   el.style.display = 'block';
@@ -444,12 +292,6 @@ async function loadAll(){
       console.error('[admin] overview failed', ovR.status, body);
       showError(`/api/admin/overview → HTTP ${ovR.status}\n${body.slice(0, 500)}`);
     }
-    // Pending human-review queue with the detailed brief (#6) — separate call so
-    // a slow Tasks API never blocks the KPI/audit render above.
-    try{
-      const hR = await fetch('/api/admin/pending-hitl', {cache:'no-store'});
-      if(hR.ok){ const h = await hR.json(); renderHitl(h.items||[]); }
-    }catch(e){ console.error('[admin] pending-hitl failed', e); }
   } catch(e){
     console.error('[admin] poll failed', e);
     statusEl.textContent = 'connection error — retrying';

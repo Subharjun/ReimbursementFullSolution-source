@@ -198,6 +198,69 @@
   .roi-cell .rv{font-family:var(--mono); font-size:16px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums}
   .roi-cell.dup .rv{color:var(--reject)}
 
+  /* ---- Live Agent Boardroom (SSE) ---- */
+  .board-idle{padding:26px 18px; text-align:center; color:var(--faint); font-family:var(--mono); font-size:12px}
+  .board-live-dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--reject);
+    animation:pulse 1.6s infinite; margin-right:8px; vertical-align:1px}
+  .board-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:14px 18px 4px}
+  .board-head .b-case{font-family:var(--mono); font-size:12px; color:var(--accent)}
+  .board-head .b-claim{font-size:13px; font-weight:600}
+  .board-head .b-mode{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-left:auto}
+  .board-stages{display:flex; gap:8px; flex-wrap:wrap; padding:10px 18px 4px}
+  .bstage{display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:5px 11px; background:var(--panel-2)}
+  .bstage.working{border-color:var(--accent); color:var(--accent)}
+  .bstage.working .sp{display:inline-block; width:9px; height:9px; border:2px solid var(--accent); border-top-color:transparent;
+    border-radius:50%; animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .bstage.done{border-color:color-mix(in srgb,var(--approve) 45%,transparent); color:var(--approve)}
+  .board-feed{padding:12px 18px 18px; display:flex; flex-direction:column; gap:10px; max-height:430px; overflow-y:auto}
+  .bturn{display:flex; gap:11px; align-items:flex-start; opacity:0; transform:translateY(6px); animation:bIn .35s forwards}
+  @keyframes bIn{to{opacity:1; transform:none}}
+  .bturn .av{width:34px; height:34px; border-radius:10px; background:var(--panel-2); border:1px solid var(--line);
+    display:grid; place-items:center; font-size:16px; flex:none}
+  .bturn .bw{flex:1; min-width:0}
+  .bturn .bwho{font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; color:var(--muted); margin-bottom:3px}
+  .bturn .btext{font-size:13px; line-height:1.55; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:10px; padding:9px 12px}
+  .bturn.challenge .btext{border-color:color-mix(in srgb,var(--fraud) 40%,transparent)}
+  .bturn.veto .btext{border-color:color-mix(in srgb,var(--reject) 55%,transparent)}
+  .bturn.prosecute .btext{border-color:color-mix(in srgb,var(--redteam) 45%,transparent)}
+  .bturn.arbitrate .btext{border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+  .board-verdict{margin:4px 18px 16px; padding:12px 15px; border-radius:10px; font-size:13.5px; font-weight:600;
+    border:1px solid var(--line); background:var(--panel-2)}
+  .board-verdict.approve{border-color:var(--approve); color:var(--approve)}
+  .board-verdict.review{border-color:var(--review); color:var(--review)}
+  .board-verdict.reject{border-color:var(--reject); color:var(--reject)}
+
+  /* ---- what-if simulator ---- */
+  .sim{display:grid; grid-template-columns:280px 1fr; gap:18px; padding:16px 18px 20px}
+  @media(max-width:760px){.sim{grid-template-columns:1fr}}
+  .sim .controls{display:flex; flex-direction:column; gap:12px}
+  .sim label{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .sim input[type=text], .sim select{background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    border-radius:8px; padding:8px 11px; font-size:13px; width:100%}
+  .sim input[type=range]{width:100%; accent-color:var(--accent)}
+  .sim .amt-read{font-family:var(--mono); font-size:22px; font-weight:600; letter-spacing:-.01em}
+  .sim-out .verdict-line{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px}
+  .sim-out .rationale{font-size:12.5px; color:var(--muted); line-height:1.55; margin-bottom:14px}
+  .sim-axis{position:relative; height:64px; margin:6px 4px 0}
+  .sim-axis .track{position:absolute; top:26px; left:0; right:0; height:6px; border-radius:4px; background:var(--panel-2); border:1px solid var(--line)}
+  .sim-axis .seg{position:absolute; top:26px; height:6px}
+  .sim-axis .bmark{position:absolute; top:14px; width:2px; height:30px; background:var(--ink); opacity:.55}
+  .sim-axis .blabel{position:absolute; top:46px; transform:translateX(-50%); font-family:var(--mono); font-size:9.5px; color:var(--muted); white-space:nowrap}
+  .sim-axis .you{position:absolute; top:8px; transform:translateX(-50%); font-size:15px}
+  .sim .headroom{font-family:var(--mono); font-size:11.5px; color:var(--accent); margin-top:12px}
+
+  /* ---- fraud constellation ---- */
+  .constellation-wrap{position:relative; padding:8px 10px 14px}
+  #constellation{width:100%; height:380px; display:block; border-radius:10px}
+  .const-legend{display:flex; gap:16px; flex-wrap:wrap; padding:0 12px 10px; font-family:var(--mono); font-size:10.5px; color:var(--muted)}
+  .const-legend i{display:inline-block; width:18px; height:3px; border-radius:2px; margin-right:6px; vertical-align:3px}
+  .const-tip{position:absolute; pointer-events:none; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:8px 11px; font-size:11.5px; box-shadow:var(--shadow); display:none; z-index:5; max-width:240px}
+  .const-empty{position:absolute; inset:0; display:grid; place-items:center; color:var(--faint); font-family:var(--mono); font-size:12px}
+
   footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
   footer .legend{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:10px}
   footer .lg{display:flex; align-items:center; gap:6px}
@@ -219,6 +282,8 @@
       <div class="sub">multi-agent claim adjudication — live, on real submissions from the intake form</div>
     </div>
     <div class="spacer"></div>
+    <a class="navlink" href="/review" target="_blank" rel="noopener">Reviewer cockpit →</a>
+    <a class="navlink" href="/ledger" target="_blank" rel="noopener">Ledger →</a>
     <a class="navlink" href="/admin" target="_blank" rel="noopener">Admin panel →</a>
     <span id="uipHealth" class="health-pill" title="checking tenant + case release…">◌ checking…</span>
     <div class="status"><span class="dot"></span> <span id="statusTxt">live — polling real submissions</span></div>
@@ -230,6 +295,15 @@
 
   <!-- hero: the single most compelling "debate changed the outcome" case -->
   <div id="hero"></div>
+
+  <!-- Live Agent Boardroom — the debate streamed turn-by-turn as it happens -->
+  <section class="card" id="boardCard">
+    <div class="hd">
+      <h2><span class="board-live-dot" id="boardDot" style="display:none"></span>Agent Boardroom — live session</h2>
+      <span class="hint" id="boardHint">waiting for the next submission…</span>
+    </div>
+    <div id="boardBody"><div class="board-idle">The boardroom convenes automatically the moment a claim is submitted on the intake form — the four agents' openings, cross-examinations and verdict stream here in real time (SSE).</div></div>
+  </section>
 
   <!-- pipeline -->
   <section class="card">
@@ -248,6 +322,42 @@
         <div class="feed" id="feed"></div>
       </div>
       <div class="side" id="side"></div>
+    </div>
+  </section>
+
+  <!-- what-if verdict simulator -->
+  <section class="card">
+    <div class="hd"><h2>What-if simulator</h2><span class="hint">drag the amount — watch the committee's verdict flip at the exact rupee</span></div>
+    <div class="sim">
+      <div class="controls">
+        <div><label>Expense type</label>
+          <select id="simType"><option>Travel</option><option>Food</option><option>Medical</option><option>Internet</option><option>Equipment</option><option>Others</option></select></div>
+        <div><label>Vendor</label><input type="text" id="simVendor" value="Uber" maxlength="60"></div>
+        <div><label>Amount (INR)</label>
+          <div class="amt-read" id="simAmtRead">4,200</div>
+          <input type="range" id="simAmt" min="100" max="80000" step="100" value="4200"></div>
+      </div>
+      <div class="sim-out">
+        <div class="verdict-line"><span class="chip review" id="simChip">…</span><span class="mono" id="simMeta" style="font-size:11px;color:var(--faint)"></span></div>
+        <div class="rationale" id="simWhy">Move the slider to probe the decision surface.</div>
+        <div class="sim-axis" id="simAxis"></div>
+        <div class="headroom" id="simHeadroom"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- fraud constellation -->
+  <section class="card">
+    <div class="hd"><h2>Fraud constellation</h2><span class="hint">every claim is a star — duplicate rings light up as clusters</span></div>
+    <div class="constellation-wrap">
+      <canvas id="constellation"></canvas>
+      <div class="const-tip" id="constTip"></div>
+      <div class="const-empty" id="constEmpty" style="display:none">no claims on the map yet</div>
+    </div>
+    <div class="const-legend">
+      <span><i style="background:var(--reject)"></i>possible duplicate (2% amount, ≤7d)</span>
+      <span><i style="background:var(--review)"></i>possible split (same vendor ≤3d)</span>
+      <span><i style="background:var(--line)"></i>same vendor</span>
     </div>
   </section>
 
@@ -627,12 +737,253 @@ async function loadHealth(){
   }
 }
 
+// ======================================================================== //
+//  LIVE AGENT BOARDROOM — SSE stream of the debate as it happens            //
+// ======================================================================== //
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+const board = {es:null, caseId:null, stages:{}, feed:null, done:false};
+
+function boardAttach(caseId){
+  if(board.caseId === caseId && board.es) return;
+  if(board.es){ board.es.close(); board.es = null; }
+  board.caseId = caseId; board.stages = {}; board.done = false;
+  const body = document.getElementById('boardBody');
+  body.innerHTML = `
+    <div class="board-head"><span class="b-case">${esc(caseId)}</span>
+      <span class="b-claim" id="bClaim"></span><span class="b-mode" id="bMode"></span></div>
+    <div class="board-stages" id="bStages"></div>
+    <div class="board-feed" id="bFeed"></div>`;
+  board.feed = document.getElementById('bFeed');
+  document.getElementById('boardDot').style.display = 'inline-block';
+  document.getElementById('boardHint').textContent = 'streaming live — SSE';
+
+  const es = new EventSource(`/api/consensus/stream/${encodeURIComponent(caseId)}`);
+  board.es = es;
+  es.onmessage = (m) => { try{ boardEvent(JSON.parse(m.data)); }catch(e){} };
+  es.onerror = () => { if(board.done){ es.close(); } };
+}
+
+function boardStageChip(ev){
+  const wrap = document.getElementById('bStages');
+  if(!wrap) return;
+  let el = board.stages[ev.stage];
+  if(!el){
+    el = document.createElement('span');
+    el.className = 'bstage';
+    board.stages[ev.stage] = el;
+    wrap.appendChild(el);
+  }
+  if(ev.type === 'stage_started'){
+    el.classList.add('working'); el.classList.remove('done');
+    el.innerHTML = `<span class="sp"></span> ${esc(ev.speaker||ev.stage)} · thinking`;
+  } else {
+    el.classList.remove('working'); el.classList.add('done');
+    const via = ev.source === 'live' ? `job ${ev.job_id}` : (ev.source||'local');
+    el.textContent = `✓ ${ev.speaker||ev.stage} · ${(ev.elapsed_ms/1000).toFixed(1)}s · ${via}`;
+  }
+}
+
+function boardEvent(ev){
+  if(ev.type === 'convened'){
+    const c = ev.claim || {};
+    const claimEl = document.getElementById('bClaim');
+    if(claimEl) claimEl.textContent =
+      `${c.vendor||'?'} · ${c.currency||''} ${Number(c.amount||0).toLocaleString()} · ${c.expense_type||''}`;
+    const modeEl = document.getElementById('bMode');
+    if(modeEl) modeEl.textContent = ev.live ? 'live orchestrator jobs' : 'local scoring';
+  } else if(ev.type === 'stage_started' || ev.type === 'stage_done'){
+    boardStageChip(ev);
+  } else if(ev.type === 'turn'){
+    const d = document.createElement('div');
+    d.className = `bturn ${esc(ev.stance||'')}`;
+    d.innerHTML = `<div class="av">${ev.avatar||'🤖'}</div><div class="bw">
+      <div class="bwho">R${ev.round||''} · ${esc(ev.speaker||'')} · ${esc(ev.role||'')} · <b>${esc(ev.stance||'')}</b></div>
+      <div class="btext">${mdText(ev.text||'')}</div></div>`;
+    board.feed && board.feed.appendChild(d);
+    board.feed && (board.feed.scrollTop = board.feed.scrollHeight);
+  } else if(ev.type === 'verdict'){
+    const cls = vclass(ev.recommendation);
+    const v = document.createElement('div');
+    v.className = `board-verdict ${cls}`;
+    v.innerHTML = `Consensus: ${esc(ev.recommendation)} — ${esc(ev.rationale||'')}` +
+      (ev.redteam_escalated ? ' 🕵️ (escalated by the Adversarial Auditor)' : '');
+    document.getElementById('boardBody').appendChild(v);
+  } else if(ev.type === 'adjourned'){
+    board.done = true;
+    document.getElementById('boardDot').style.display = 'none';
+    document.getElementById('boardHint').textContent =
+      ev.ok ? `session adjourned — ${ev.recommendation||''}` : 'session ended with an error';
+    if(board.es){ board.es.close(); board.es = null; }
+    setTimeout(loadData, 1500);  // pull the finished record into the theater below
+  }
+}
+
+async function boardPoll(){
+  if(board.es && !board.done) return;  // already watching a live session
+  try{
+    const r = await fetch('/api/consensus/stream', {cache:'no-store'});
+    const j = await r.json();
+    if(j.case_id && j.case_id !== board.caseId) boardAttach(j.case_id);
+  }catch(e){}
+}
+
+// ======================================================================== //
+//  WHAT-IF SIMULATOR — probe the committee's decision surface              //
+// ======================================================================== //
+let simTimer = null, simSeq = 0;
+function simSchedule(){ clearTimeout(simTimer); simTimer = setTimeout(simRun, 180); }
+
+async function simRun(){
+  const amt = +document.getElementById('simAmt').value;
+  document.getElementById('simAmtRead').textContent = amt.toLocaleString();
+  const my = ++simSeq;
+  try{
+    const r = await fetch('/api/consensus/whatif', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({amount: amt, currency:'INR',
+        expense_type: document.getElementById('simType').value,
+        vendor: document.getElementById('simVendor').value || 'Simulated Vendor'})});
+    if(my !== simSeq) return;  // a newer slider position superseded this call
+    const s = await r.json();
+    simRender(s, amt);
+  }catch(e){}
+}
+
+function simRender(s, amt){
+  const v = s.verdict || {};
+  const chip = document.getElementById('simChip');
+  chip.className = `chip ${vclass(v.recommendation)}`;
+  chip.textContent = (v.recommendation||'?').replace(/_/g,' ');
+  document.getElementById('simMeta').textContent =
+    `${v.expense_type||''} · limit ${Number(v.spend_limit||0).toLocaleString()} · auto ≤ ${Number(v.auto_approve_threshold||0).toLocaleString()}`;
+  document.getElementById('simWhy').textContent = v.rationale || '';
+  const head = document.getElementById('simHeadroom');
+  if(s.headroom != null && s.next_boundary_above){
+    head.textContent = `▲ ${Number(s.headroom).toLocaleString()} INR of headroom — at ${Number(s.next_boundary_above.at_amount).toLocaleString()} this becomes ${s.next_boundary_above.to_recommendation.replace(/_/g,' ')}`;
+  } else { head.textContent = 'no higher boundary on this axis — the verdict holds as amount grows'; }
+
+  // axis: 0 .. max(1.4*limit, amt)
+  const axis = document.getElementById('simAxis');
+  const maxX = Math.max((v.spend_limit||10000)*1.4, amt*1.1, 1000);
+  const px = (x) => Math.min(100, Math.max(0, x/maxX*100));
+  const famColor = {approve:'var(--approve)', review:'var(--review)', reject:'var(--reject)'};
+  let segs = '', last = 0, lastFam = (s.boundaries[0]?.from_family) || v.family;
+  for(const b of (s.boundaries||[])){
+    segs += `<div class="seg" style="left:${px(last)}%;width:${px(b.at_amount)-px(last)}%;background:${famColor[lastFam]||'var(--line)'};opacity:.55"></div>`;
+    last = b.at_amount; lastFam = b.to_family;
+  }
+  segs += `<div class="seg" style="left:${px(last)}%;width:${100-px(last)}%;background:${famColor[lastFam]||'var(--line)'};opacity:.55"></div>`;
+  const marks = (s.boundaries||[]).map(b =>
+    `<div class="bmark" style="left:${px(b.at_amount)}%"></div>
+     <div class="blabel" style="left:${px(b.at_amount)}%">${Number(b.at_amount).toLocaleString()}</div>`).join('');
+  axis.innerHTML = `<div class="track"></div>${segs}${marks}<div class="you" style="left:${px(amt)}%">▼</div>`;
+}
+
+['simAmt','simType','simVendor'].forEach(id =>
+  document.getElementById(id).addEventListener('input', simSchedule));
+
+// ======================================================================== //
+//  FRAUD CONSTELLATION — force-directed claim-link graph on canvas          //
+// ======================================================================== //
+const constel = {nodes:[], edges:[], anim:null, hover:null};
+
+async function constellationLoad(){
+  try{
+    const r = await fetch('/api/fraud/graph', {cache:'no-store'});
+    const g = await r.json();
+    const prev = Object.fromEntries(constel.nodes.map(n => [n.id, n]));
+    const cv = document.getElementById('constellation');
+    const W = cv.clientWidth || 900, H = 380;
+    constel.nodes = (g.nodes||[]).map(n => Object.assign(
+      {x: Math.random()*W, y: Math.random()*H, vx:0, vy:0},
+      prev[n.id] || {}, n));
+    const byId = Object.fromEntries(constel.nodes.map(n => [n.id, n]));
+    constel.edges = (g.edges||[]).filter(e => byId[e.source] && byId[e.target]);
+    document.getElementById('constEmpty').style.display = constel.nodes.length ? 'none' : 'grid';
+    if(!constel.anim) constellationTick();
+  }catch(e){}
+}
+
+function constellationTick(){
+  const cv = document.getElementById('constellation');
+  const ctx = cv.getContext('2d');
+  const W = cv.clientWidth || 900, H = 380;
+  if(cv.width !== W*2){ cv.width = W*2; cv.height = H*2; ctx.scale(2,2); }
+  const byId = Object.fromEntries(constel.nodes.map(n => [n.id, n]));
+
+  // physics: mild center gravity + repulsion + edge springs
+  for(const n of constel.nodes){
+    n.vx += (W/2 - n.x)*0.0012; n.vy += (H/2 - n.y)*0.0012;
+    for(const m of constel.nodes){
+      if(m === n) continue;
+      const dx = n.x-m.x, dy = n.y-m.y, d2 = dx*dx+dy*dy+40;
+      n.vx += dx/d2*46; n.vy += dy/d2*46;
+    }
+  }
+  for(const e of constel.edges){
+    const a = byId[e.source], b = byId[e.target];
+    const want = e.kind==='possible_duplicate' ? 70 : e.kind==='possible_split' ? 100 : 150;
+    const dx = b.x-a.x, dy = b.y-a.y, d = Math.hypot(dx,dy)||1, f = (d-want)/d*0.01*e.weight;
+    a.vx += dx*f; a.vy += dy*f; b.vx -= dx*f; b.vy -= dy*f;
+  }
+  for(const n of constel.nodes){
+    n.vx *= 0.86; n.vy *= 0.86; n.x += n.vx; n.y += n.vy;
+    n.x = Math.max(20, Math.min(W-20, n.x)); n.y = Math.max(20, Math.min(H-20, n.y));
+  }
+
+  // draw
+  const css = getComputedStyle(document.documentElement);
+  const col = (v) => css.getPropertyValue(v).trim();
+  ctx.clearRect(0,0,W,H);
+  for(const e of constel.edges){
+    const a = byId[e.source], b = byId[e.target];
+    ctx.strokeStyle = e.kind==='possible_duplicate' ? col('--reject')
+                    : e.kind==='possible_split' ? col('--review') : col('--line');
+    ctx.lineWidth = e.kind==='same_vendor' ? 1 : 2;
+    ctx.globalAlpha = e.kind==='same_vendor' ? 0.5 : 0.9;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const famCol = {approve:col('--approve'), review:col('--review'), reject:col('--reject'), unknown:col('--faint')};
+  for(const n of constel.nodes){
+    const r = Math.max(5, Math.min(13, Math.log10((n.amount||1)+1)*3.2));
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    ctx.fillStyle = famCol[n.family] || col('--faint');
+    ctx.globalAlpha = n === constel.hover ? 1 : 0.85; ctx.fill(); ctx.globalAlpha = 1;
+    if(n === constel.hover){ ctx.strokeStyle = col('--ink'); ctx.lineWidth = 1.5; ctx.stroke(); }
+  }
+  constel.anim = requestAnimationFrame(constellationTick);
+}
+
+document.getElementById('constellation').addEventListener('mousemove', (ev) => {
+  const rect = ev.target.getBoundingClientRect();
+  const x = ev.clientX-rect.left, y = ev.clientY-rect.top;
+  constel.hover = constel.nodes.find(n => Math.hypot(n.x-x, n.y-y) < 14) || null;
+  const tip = document.getElementById('constTip');
+  if(constel.hover){
+    const n = constel.hover;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(x+14, rect.width-250)+'px'; tip.style.top = (y+8)+'px';
+    tip.innerHTML = `<b>${esc(n.vendor)}</b> · ${esc(n.currency)} ${Number(n.amount).toLocaleString()}<br>
+      <span class="mono" style="font-size:10px;color:var(--muted)">${esc(n.id)} · ${esc(n.date||'')} · ${esc(n.verdict||'pending')}</span>`;
+  } else tip.style.display = 'none';
+});
+
 renderKPIs();
 renderTabs();
 loadData();
 loadHealth();
+simRun();
+constellationLoad();
+boardPoll();
 setInterval(loadData, 8000);
 setInterval(loadHealth, 30000);
+setInterval(constellationLoad, 30000);
+setInterval(boardPoll, 5000);
 </script>
 </body>
 </html>

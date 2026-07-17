@@ -677,3 +677,120 @@
   .outcome-btn { justify-content: center; }
   .form-hint { max-width: 100%; }
 }
+
+/* ── Ask the Committee — grounded claim copilot ─────────────────────────── */
+.copilot {
+  margin: 18px 0 6px;
+  text-align: left;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.copilot-head { margin-bottom: 10px; }
+.copilot-title {
+  display: block;
+  font-family: var(--heading);
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+.copilot-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.copilot-suggest { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.copilot-suggest button {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.copilot-suggest button:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
+.copilot-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.copilot-msg { display: flex; gap: 8px; align-items: flex-start; }
+.copilot-msg--you { justify-content: flex-end; }
+.copilot-av { font-size: 1rem; flex: none; margin-top: 2px; }
+.copilot-bubble {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  padding: 8px 12px;
+  border-radius: 12px;
+  max-width: 85%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.copilot-msg--you .copilot-bubble {
+  background: var(--accent-grad);
+  color: #fff;
+  border: 0;
+}
+.copilot-bubble--typing { color: var(--text-muted); font-style: italic; }
+.copilot-input { display: flex; gap: 8px; }
+.copilot-input input {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+.copilot-input input:focus { outline: none; border-color: var(--border-focus); }
+.copilot-input button {
+  padding: 9px 18px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-grad-vivid);
+  color: #fff;
+  cursor: pointer;
+}
+.copilot-input button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Groq vision receipt auto-fill banner ──────────────────────────────── */
+.extract-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  border: 1px solid var(--border-color);
+}
+.extract-banner--reading {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.extract-banner--done {
+  background: color-mix(in oklab, var(--border-focus) 10%, var(--bg-card));
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+.extract-banner strong { font-weight: 600; }
+.extract-conf { color: var(--text-muted); font-family: var(--mono, monospace); font-size: 0.76rem; }
+.extract-spinner {
+  width: 15px; height: 15px; flex: none;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--border-focus);
+  border-radius: 50%;
+  animation: extract-spin 0.7s linear infinite;
+}
+@keyframes extract-spin { to { transform: rotate(360deg); } }

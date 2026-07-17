@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision Ledger — Tamper-Evident Provenance</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580;
+    --approve:#2dd4a7; --review:#f5a524; --reject:#f0475f; --accent:#38bdf8;
+    --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+    --radius:14px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono","Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+      --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+      --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35)}
+  }
+  :root[data-theme="dark"]{--bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580; --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8)}
+  :root[data-theme="light"]{--bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+    --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+    --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35)}
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:44px 44px}
+  .wrap{max-width:980px; margin:0 auto; padding:26px 22px 72px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted)}
+  header.bar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:22px}
+  .brand h1{margin:0; font-size:20px; letter-spacing:-.01em; font-weight:650}
+  .brand .sub{font-family:var(--mono); font-size:12px; color:var(--muted)}
+  .bar .spacer{flex:1}
+  .navlink{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent);
+    text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:7px 13px; background:var(--panel)}
+  .tbtn{background:var(--panel); border:1px solid var(--line); color:var(--muted); border-radius:999px; width:38px; height:38px;
+    cursor:pointer; font-size:15px; display:grid; place-items:center}
+
+  .integrity{display:flex; align-items:center; gap:14px; background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 20px; margin-bottom:20px}
+  .integrity .shield{font-size:28px}
+  .integrity .t{font-weight:650; font-size:14.5px}
+  .integrity .d{font-family:var(--mono); font-size:11.5px; color:var(--muted); word-break:break-all}
+  .integrity.ok{border-color:color-mix(in srgb,var(--approve) 45%,transparent)}
+  .integrity.ok .t{color:var(--approve)}
+  .integrity.bad{border-color:var(--reject)} .integrity.bad .t{color:var(--reject)}
+  .integrity button{margin-left:auto; font-family:var(--mono); font-size:11px; letter-spacing:.07em; text-transform:uppercase;
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:9px 15px; cursor:pointer}
+  .integrity button:hover{border-color:var(--accent); color:var(--accent)}
+
+  .chain{position:relative; padding-left:26px}
+  .chain::before{content:""; position:absolute; left:8px; top:8px; bottom:8px; width:2px;
+    background:linear-gradient(var(--accent), var(--line))}
+  .block{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); padding:13px 16px; margin-bottom:12px}
+  .block::before{content:""; position:absolute; left:-22px; top:18px; width:10px; height:10px; border-radius:50%;
+    background:var(--accent); border:2px solid var(--bg)}
+  .block .row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  .block .idx{font-family:var(--mono); font-size:11px; color:var(--faint)}
+  .block .kind{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    padding:3px 9px; border-radius:6px; background:var(--panel-2); border:1px solid var(--line); color:var(--muted)}
+  .block .kind.submission{color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+  .block .kind.committee_verdict{color:var(--review); border-color:color-mix(in srgb,var(--review) 40%,transparent)}
+  .block .kind.human_decision{color:var(--approve); border-color:color-mix(in srgb,var(--approve) 40%,transparent)}
+  .block .case{font-family:var(--mono); font-size:11.5px; color:var(--ink)}
+  .block .when{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-left:auto}
+  .block .payload{font-size:12.5px; color:var(--muted); margin-top:7px; line-height:1.55}
+  .block .hashes{font-family:var(--mono); font-size:9.5px; color:var(--faint); margin-top:8px; word-break:break-all}
+  .block .hashes b{color:var(--muted); font-weight:500}
+  .empty{color:var(--faint); font-family:var(--mono); font-size:12px; text-align:center; padding:40px 0}
+  footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">
+      <div class="eyebrow">UiPath AgentHack · Track 1 · Reimbursement</div>
+      <h1>Decision Ledger</h1>
+      <div class="sub">hash-chained provenance — every decision about money, tamper-evident</div>
+    </div>
+    <div class="spacer"></div>
+    <a class="navlink" href="/review">Reviewer cockpit →</a>
+    <a class="navlink" href="/dashboard">Consensus Engine →</a>
+    <button class="tbtn" id="themeBtn" title="Toggle theme">◐</button>
+  </header>
+
+  <div class="integrity" id="integrity">
+    <span class="shield">🛡️</span>
+    <div><div class="t" id="intTitle">verifying chain…</div><div class="d" id="intDetail"></div></div>
+    <button id="verifyBtn">Re-verify chain</button>
+  </div>
+
+  <div class="chain" id="chain"><div class="empty">loading ledger…</div></div>
+
+  <footer>
+    Every block's hash covers its payload AND the previous block's hash — editing any historical
+    decision breaks every hash after it. Chain restarts with the server process (ephemeral disk on Render);
+    it never claims history it can't prove.
+  </footer>
+</div>
+
+<script>
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+function fmtTime(t){
+  try{ return new Date(t*1000).toLocaleString(); }catch(e){ return ''; }
+}
+function payloadText(b){
+  const p = b.payload || {};
+  if(b.kind === 'submission')
+    return `${esc(p.employee||'Someone')} claimed ${esc(p.currency||'')} ${Number(p.amount||0).toLocaleString()} — ${esc(p.vendor||'')} (${esc(p.expense_type||'')}), case job ${esc((p.job_key||'').slice(0,8))}…`;
+  if(b.kind === 'committee_verdict')
+    return `Committee ruled <b>${esc(p.recommendation||'')}</b> (${esc(p.engine_mode||'')} mode${(p.live_job_ids||[]).length?', jobs '+p.live_job_ids.join(', '):''}): ${esc(p.rationale||'')}` +
+      (p.redteam_escalated ? ' 🕵️ escalated by the Adversarial Auditor.' : '');
+  if(b.kind === 'human_decision')
+    return `A human reviewer chose <b>${esc((p.action||'').toUpperCase())}</b> on Action Center task ${esc(String(p.task_id||''))}` + (p.notes?` — “${esc(p.notes)}”`:'');
+  if(b.kind === 'genesis') return esc(p.note||'chain begins');
+  return esc(JSON.stringify(p));
+}
+function render(data){
+  const v = data.verification || {};
+  const box = document.getElementById('integrity');
+  box.classList.remove('ok','bad');
+  box.classList.add(v.ok ? 'ok' : 'bad');
+  document.getElementById('intTitle').textContent = v.ok
+    ? `chain intact — ${v.blocks} block(s) verified`
+    : `chain BROKEN at block ${v.broken_at}: ${v.reason}`;
+  document.getElementById('intDetail').textContent = v.head_hash ? `head ${v.head_hash}` : '';
+
+  const chain = [...(data.chain||[])].reverse();  // newest first
+  document.getElementById('chain').innerHTML = chain.length ? chain.map(b => `
+    <div class="block">
+      <div class="row">
+        <span class="idx">#${b.index}</span>
+        <span class="kind ${esc(b.kind)}">${esc(b.kind.replace(/_/g,' '))}</span>
+        ${b.case_id ? `<span class="case">${esc(b.case_id)}</span>` : ''}
+        <span class="when">${fmtTime(b.at)}</span>
+      </div>
+      <div class="payload">${payloadText(b)}</div>
+      <div class="hashes"><b>hash</b> ${esc(b.hash)}<br><b>prev</b> ${esc(b.prev_hash)}</div>
+    </div>`).join('') : '<div class="empty">no blocks yet — submit a claim to start the chain</div>';
+}
+async function load(){
+  try{
+    const r = await fetch('/api/ledger?limit=100', {cache:'no-store'});
+    render(await r.json());
+  }catch(e){
+    document.getElementById('chain').innerHTML = '<div class="empty">ledger unreachable</div>';
+  }
+}
+document.getElementById('verifyBtn').addEventListener('click', load);
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const r = document.documentElement;
+  const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  r.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+});
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

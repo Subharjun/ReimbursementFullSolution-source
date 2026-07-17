@@ -55,6 +55,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 from .agents import classify, policy_check, fraud_screen, roi, _to_float
 from .live_agents import (
@@ -90,13 +91,31 @@ def _turn(speaker, stance, text, confidence=None, round_no=0):
     }
 
 
-def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None = None) -> dict:
+class _EmittingTranscript(list):
+    """A transcript list that publishes each appended turn to the boardroom
+    stream the instant it lands -- so /dashboard can render the debate live."""
+
+    def __init__(self, emit):
+        super().__init__()
+        self._emit = emit
+
+    def append(self, turn):
+        super().append(turn)
+        self._emit("turn", **turn)
+
+
+def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None = None,
+               on_event=None) -> dict:
     """Run the full 3-round debate. Returns transcript + consensus + evidence.
 
     live=True (the default) scores Classify + Policy via REAL Orchestrator jobs
     (the deployed ReimbursementClassificationAgent / PolicyRuleCheckWorkflow in
     Shared/ReimbursementFullSolution), each with a per-agent local fallback;
     Fraud + arbitration are deterministic. live=False uses the all-local ports.
+
+    on_event(type, **payload), if given, receives boardroom stream events as the
+    debate unfolds: stage_started / stage_done per reasoning stage, turn per
+    transcript line, verdict at the end. Must never raise (wrapped anyway).
     """
     history = history or []
     live = LIVE_DEFAULT if live is None else live
@@ -104,22 +123,42 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
     cur = claim.get("currency") or "USD"
     vendor = claim.get("vendor") or "(unknown vendor)"
 
+    def emit(event_type, **payload):
+        if on_event is None:
+            return
+        try:
+            on_event(event_type, **payload)
+        except Exception:
+            pass
+
+    def _staged(stage, persona, fn, *args):
+        """Run one reasoning stage with started/done boardroom events."""
+        emit("stage_started", stage=stage, speaker=persona["name"],
+             role=persona["role"], avatar=persona["avatar"], live=live)
+        t0 = time.time()
+        out = fn(*args)
+        emit("stage_done", stage=stage, speaker=persona["name"],
+             elapsed_ms=int((time.time() - t0) * 1000),
+             source=out.get("_source", "live" if live else "local") if isinstance(out, dict) else "local",
+             job_id=out.get("_job_id") if isinstance(out, dict) else None)
+        return out
+
     # --- independent findings ------------------------------------------------ #
     # Fully live: all three findings stages (Classify, Fraud, Policy) run as REAL
     # Orchestrator jobs -- ReimbursementClassificationAgent, FraudIntegrityAgent,
     # PolicyRuleCheckWorkflow -- each with its own per-agent fallback to the local
     # port if the job faults / a key drifts. live=False uses the all-local ports.
     if live:
-        cls = classify_live(claim)
-        frd = fraud_live(claim, history)
-        pol = policy_check_live(claim, cls)
+        cls = _staged("classifier", CLASSIFIER, classify_live, claim)
+        frd = _staged("fraud", FRAUD, fraud_live, claim, history)
+        pol = _staged("policy", POLICY, policy_check_live, claim, cls)
     else:
-        cls = classify(claim)
-        frd = fraud_screen(claim, history)
-        pol = policy_check(claim, cls)
+        cls = _staged("classifier", CLASSIFIER, classify, claim)
+        frd = _staged("fraud", FRAUD, fraud_screen, claim, history)
+        pol = _staged("policy", POLICY, policy_check, claim, cls)
     cls_original = dict(cls)  # pre-debate snapshot, for the solo-verdict comparison below
 
-    transcript: list[dict] = []
+    transcript: list[dict] = _EmittingTranscript(emit)
 
     # ==================== ROUND 1 - OPENING POSITIONS ==================== #
     transcript.append(_turn(
@@ -236,7 +275,12 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
     # adds no Orchestrator-job latency; deterministic heuristic if Groq is off).
     # Monotonic: its effect is capped at "get a human" -- it can never approve or
     # hard-reject on its own (applied at arbitration below).
+    emit("stage_started", stage="redteam", speaker=NYX["name"], role=NYX["role"],
+         avatar=NYX["avatar"], live=False)
+    _rt0 = time.time()
     red = red_team_review(claim, cls, frd, pol)
+    emit("stage_done", stage="redteam", speaker=NYX["name"],
+         elapsed_ms=int((time.time() - _rt0) * 1000), source=red["source"], job_id=None)
     transcript.append(_turn(
         NYX, "prosecute", round_no=2, confidence=red["confidence"],
         text=(
@@ -253,7 +297,14 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
     recommendation, path, rationale = _arbitrate(cls, frd, pol)
     arb_source, arb_job = "deterministic", None
     if live:
+        emit("stage_started", stage="arbitration", speaker="Arbiter",
+             role="Consensus Arbitration", avatar="\U0001F3DB️", live=True)
+        _arb0 = time.time()
         arb = arbitrate_live(cls, frd, pol, claim)
+        emit("stage_done", stage="arbitration", speaker="Arbiter",
+             elapsed_ms=int((time.time() - _arb0) * 1000),
+             source="live" if arb else "deterministic",
+             job_id=arb["_job_id"] if arb else None)
         if arb:
             recommendation, path, rationale = arb["recommendation"], arb["path"], arb["rationale"]
             arb_source, arb_job = "live", arb["_job_id"]
@@ -335,6 +386,10 @@ def run_debate(claim: dict, history: list[dict] | None = None, live: bool | None
     else:
         mode = "fallback"  # asked for live, but every job fell back to local
     engine = {"mode": mode, "live_job_ids": live_jobs, "agents": agents_engine}
+
+    emit("verdict", recommendation=recommendation, path=path, rationale=rationale,
+         unanimous=not dissent, dissent=dissent, redteam_escalated=redteam_escalated,
+         debate_changed_outcome=debate_changed_outcome, mode=mode, live_job_ids=live_jobs)
 
     return {
         "engine": engine,

@@ -22,18 +22,23 @@ WHY THIS EXISTS
 CONFIG (all env, never hard-coded -- the key must NEVER live in the repo)
     GROQ_API_KEY        required to enable Groq; absent -> every call returns None
     GROQ_MODEL          default "llama-3.3-70b-versatile"
+    GROQ_VISION_MODEL   default "meta-llama/llama-4-scout-17b-16e-instruct"
     GROQ_TIMEOUT_S      default 8   (keep it snappy; this is the "fast" path)
+    GROQ_VISION_TIMEOUT_S  default 20  (vision reads a whole image; give it room)
     GROQ_ENABLED        set "0" to hard-disable even if a key is present
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 from typing import Any
 
 _DEFAULT_MODEL = "llama-3.3-70b-versatile"
+# Groq's multimodal model — reads receipt images directly (no OCR pre-step).
+_DEFAULT_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def _enabled() -> bool:
@@ -133,6 +138,61 @@ def groq_json(
     if not txt:
         return None
     return _extract_json(txt)
+
+
+def _vision_model() -> str:
+    return os.environ.get("GROQ_VISION_MODEL", "").strip() or _DEFAULT_VISION_MODEL
+
+
+def _vision_timeout() -> float:
+    try:
+        return float(os.environ.get("GROQ_VISION_TIMEOUT_S", "").strip() or 20.0)
+    except (TypeError, ValueError):
+        return 20.0
+
+
+def groq_vision_json(
+    system: str,
+    user: str,
+    image_bytes: bytes,
+    mime: str = "image/jpeg",
+    *,
+    max_tokens: int = 900,
+) -> dict[str, Any] | None:
+    """Read an image + prompt and coerce the reply into a dict. None on ANY failure.
+
+    Used for receipt auto-extraction: the model reads the receipt image directly
+    (no OCR pre-step) and returns structured fields. Advisory only -- the user
+    confirms/edits everything before submit, and a failure just leaves the form
+    blank for manual entry.
+    """
+    if not _enabled() or not image_bytes:
+        return None
+    try:
+        from groq import Groq
+    except Exception:
+        return None
+    try:
+        b64 = base64.b64encode(image_bytes).decode()
+        client = Groq(api_key=os.environ["GROQ_API_KEY"].strip(),
+                      timeout=_vision_timeout(), max_retries=0)
+        resp = client.chat.completions.create(
+            model=_vision_model(),
+            temperature=0.0,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "user", "content": [
+                    {"type": "text", "text": system + "\n\n" + user +
+                        "\n\nReply with ONLY a single minified JSON object. No prose, no code fences."},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                ]},
+            ],
+        )
+        txt = (resp.choices[0].message.content or "").strip()
+        return _extract_json(txt) if txt else None
+    except Exception:
+        return None
 
 
 def _extract_json(txt: str) -> dict[str, Any] | None:

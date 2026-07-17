@@ -32,15 +32,27 @@ const STEP_CLASS: Record<ProgressStep['status'], string> = {
   faulted: 'pipeline-step--faulted',
 };
 
-const EXPENSE_TYPES = [
-  'Meals & Entertainment',
-  'Travel',
-  'Accommodation',
-  'Office Supplies',
-  'Training & Education',
-  'Medical',
-  'Utilities',
-  'Other',
+// The VALUE must be a policy category key, verbatim.
+//
+// PolicyRuleCheckWorkflow looks the category up case-sensitively with no
+// normalisation — `pol[expense_type] || pol.others` — so any label that is not
+// an exact key silently falls back to `others` (spend limit 5,000,
+// auto_approve_threshold 0) instead of erroring. The old free-text labels
+// ('Meals & Entertainment', 'Accommodation', …) missed on every single one,
+// including 'Travel' and 'Medical', purely on capitalisation. The Case only
+// worked because ReimbursementClassificationAgent re-derived the category from
+// the intake email and emitted a correct lowercase key.
+//
+// consensus/agents.py already reasons in these same keys, so this alignment
+// fixes the local engine's branches too. Keep in sync with the policy DB in
+// caseplan.json (Stage_cdgcAk/tSJN1JDM2 `policy_json`) and consensus/vision.py.
+const EXPENSE_TYPES: { value: string; label: string }[] = [
+  { value: 'travel', label: 'Travel & Accommodation' },
+  { value: 'food', label: 'Meals & Food' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'internet', label: 'Internet & Utilities' },
+  { value: 'equipment', label: 'Equipment & Supplies' },
+  { value: 'others', label: 'Other' },
 ];
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED'];
@@ -63,9 +75,115 @@ type SubmitState =
   | { status: 'success'; caseId: string; jobId?: string }
   | { status: 'error'; message: string };
 
+interface ExtractResult {
+  ok: boolean;
+  readable?: boolean;
+  confidence?: number;
+  summary?: string;
+  note?: string;
+  fields?: {
+    vendor: string;
+    amount: number | null;
+    currency: string;
+    date: string;
+    expenseType: string;
+  };
+}
+
+type ExtractState =
+  | { status: 'idle' }
+  | { status: 'reading' }
+  | { status: 'done'; confidence?: number; summary?: string; note?: string };
+
 interface IntakeFormProps {
   darkTheme: boolean;
   onToggleTheme: () => void;
+}
+
+// ── Ask the Committee — a copilot grounded in THIS claim's real record ──────
+interface ChatMsg { who: 'you' | 'clerk'; text: string }
+
+const COPILOT_SUGGESTIONS = [
+  'Why is my claim at this stage?',
+  'What did the AI committee decide?',
+  'Did any agent disagree?',
+  'What happens next?',
+];
+
+function CommitteeCopilot({ claimRef }: { claimRef: string }) {
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
+  }, [msgs]);
+
+  const ask = async (q: string) => {
+    const question = q.trim();
+    if (!question || busy) return;
+    setMsgs((m) => [...m, { who: 'you', text: question }]);
+    setDraft('');
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/copilot/${encodeURIComponent(claimRef)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const d = await r.json();
+      setMsgs((m) => [...m, { who: 'clerk', text: d.answer || 'No answer available right now.' }]);
+    } catch {
+      setMsgs((m) => [...m, { who: 'clerk', text: 'I lost the connection — try again in a moment.' }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="copilot">
+      <div className="copilot-head">
+        <span className="copilot-title">🏛️ Ask the Committee</span>
+        <span className="copilot-sub">answers grounded in your claim's real record — the agents' debate, policy limits, live case status</span>
+      </div>
+      {msgs.length === 0 && (
+        <div className="copilot-suggest">
+          {COPILOT_SUGGESTIONS.map((s) => (
+            <button key={s} type="button" onClick={() => ask(s)} disabled={busy}>{s}</button>
+          ))}
+        </div>
+      )}
+      {msgs.length > 0 && (
+        <div className="copilot-feed" ref={feedRef}>
+          {msgs.map((m, i) => (
+            <div key={i} className={`copilot-msg copilot-msg--${m.who}`}>
+              {m.who === 'clerk' && <span className="copilot-av" aria-hidden="true">🏛️</span>}
+              <span className="copilot-bubble">{m.text}</span>
+            </div>
+          ))}
+          {busy && (
+            <div className="copilot-msg copilot-msg--clerk">
+              <span className="copilot-av" aria-hidden="true">🏛️</span>
+              <span className="copilot-bubble copilot-bubble--typing">the clerk is consulting the record…</span>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="copilot-input">
+        <input
+          type="text"
+          value={draft}
+          maxLength={600}
+          placeholder="e.g. why does this need a human review?"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') ask(draft); }}
+          disabled={busy}
+        />
+        <button type="button" onClick={() => ask(draft)} disabled={busy || !draft.trim()}>Ask</button>
+      </div>
+    </div>
+  );
 }
 
 const defaultFields: Fields = {
@@ -87,6 +205,7 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
   const [submitState, setSubmitState] = useState<SubmitState>({ status: 'idle' });
   const [triedSubmit, setTriedSubmit] = useState(false);
   const [progress, setProgress] = useState<CaseProgress | null>(null);
+  const [extract, setExtract] = useState<ExtractState>({ status: 'idle' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Once a claim is submitted, poll the REAL MirCaseClone stage cursor from
@@ -129,6 +248,39 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
       return;
     }
     setReceipt(file);
+    autoExtract(file);
+  };
+
+  // Groq vision auto-fill: read the dropped receipt and pre-fill blank fields.
+  // Advisory only — never overwrites what the user already typed, and a failure
+  // silently leaves the form manual.
+  const autoExtract = async (file: File) => {
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|heic)$/i.test(file.name);
+    if (!isImage) return;
+    setExtract({ status: 'reading' });
+    try {
+      const fd = new FormData();
+      fd.append('receipt', file);
+      const r = await fetch('/api/extract-receipt', { method: 'POST', body: fd });
+      const d: ExtractResult = await r.json();
+      if (!d.ok || !d.fields) {
+        setExtract({ status: 'idle' });
+        return;
+      }
+      const f = d.fields;
+      setFields((prev) => ({
+        ...prev,
+        vendor: prev.vendor.trim() || f.vendor || '',
+        amount: prev.amount.trim() || (f.amount != null ? String(f.amount) : ''),
+        currency: f.currency && CURRENCIES.includes(f.currency) ? f.currency : prev.currency,
+        date: prev.date.trim() || f.date || '',
+        expenseType: prev.expenseType || f.expenseType || '',
+        purpose: prev.purpose.trim() || d.summary || '',
+      }));
+      setExtract({ status: 'done', confidence: d.confidence, summary: d.summary, note: d.note });
+    } catch {
+      setExtract({ status: 'idle' });
+    }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -192,6 +344,7 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
   const handleReset = () => {
     setFields(defaultFields);
     setReceipt(null);
+    setExtract({ status: 'idle' });
     setSubmitState({ status: 'idle' });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -287,6 +440,8 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
               A reviewer is deciding this claim → open the Action Center task
             </a>
           )}
+
+          {jobId && <CommitteeCopilot claimRef={jobId} />}
 
           <button type="button" className="outcome-btn outcome-btn--secondary" onClick={handleReset}>
             Submit another request
@@ -390,7 +545,7 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
               >
                 <option value="" disabled>Select a category…</option>
                 {EXPENSE_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
               {err('expenseType')}
@@ -515,6 +670,25 @@ function IntakeForm({ darkTheme, onToggleTheme }: IntakeFormProps) {
               tabIndex={-1}
             />
           </div>
+
+          {/* ── Groq vision auto-fill status ─────────────── */}
+          {extract.status === 'reading' && (
+            <div className="extract-banner extract-banner--reading">
+              <span className="extract-spinner" aria-hidden="true" />
+              Reading your receipt with AI vision — fields will fill in automatically…
+            </div>
+          )}
+          {extract.status === 'done' && (
+            <div className="extract-banner extract-banner--done">
+              <span aria-hidden="true">✨</span>
+              <div>
+                <strong>{extract.note || 'Auto-filled from your receipt — please confirm before submitting.'}</strong>
+                {typeof extract.confidence === 'number' && (
+                  <span className="extract-conf"> · read confidence {Math.round(extract.confidence * 100)}%</span>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* ── Error banner ────────────────────────────── */}

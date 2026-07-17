@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reviewer Cockpit — Adjudicate with the Committee</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580;
+    --approve:#2dd4a7; --review:#f5a524; --reject:#f0475f; --accent:#38bdf8;
+    --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8);
+    --radius:14px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono","Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+      --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+      --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35)}
+  }
+  :root[data-theme="dark"]{--bg:#0b0f17; --panel:#131a2a; --panel-2:#0f1522; --line:#222c42;
+    --ink:#eef1f8; --muted:#8a93a8; --faint:#5c6580; --grid:rgba(255,255,255,.028);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 18px 40px -24px rgba(0,0,0,.8)}
+  :root[data-theme="light"]{--bg:#eef1f7; --panel:#ffffff; --panel-2:#f5f7fb; --line:#dfe4ee;
+    --ink:#141a26; --muted:#5a6478; --faint:#97a0b3; --grid:rgba(15,25,45,.03);
+    --shadow:0 1px 0 rgba(255,255,255,.6), 0 16px 34px -22px rgba(30,45,80,.35)}
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:44px 44px}
+  .wrap{max-width:1280px; margin:0 auto; padding:26px 22px 72px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted)}
+  header.bar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:22px}
+  .brand h1{margin:0; font-size:20px; letter-spacing:-.01em; font-weight:650}
+  .brand .sub{font-family:var(--mono); font-size:12px; color:var(--muted)}
+  .bar .spacer{flex:1}
+  .navlink{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent);
+    text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:7px 13px; background:var(--panel)}
+  .tbtn{background:var(--panel); border:1px solid var(--line); color:var(--muted); border-radius:999px; width:38px; height:38px;
+    cursor:pointer; font-size:15px; display:grid; place-items:center}
+
+  .cols{display:grid; grid-template-columns:320px 1fr; gap:18px; align-items:start}
+  @media (max-width:940px){ .cols{grid-template-columns:1fr} }
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:16px 18px; margin-bottom:14px}
+  .card h2{margin:0 0 12px; font-size:13px; font-family:var(--mono); letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); font-weight:500}
+
+  /* Queue */
+  .q{list-style:none; margin:0; padding:0}
+  .q li{border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:9px; cursor:pointer;
+    background:var(--panel-2); transition:border-color .12s}
+  .q li:hover{border-color:var(--accent)}
+  .q li[aria-selected="true"]{border-color:var(--accent); box-shadow:inset 3px 0 0 var(--accent)}
+  .q .who{font-weight:600; font-size:13.5px}
+  .q .amt{font-family:var(--mono); font-size:12.5px; color:var(--ink)}
+  .q .meta{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-top:3px}
+  .q .lean{font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    padding:2px 7px; border-radius:5px; border:1px solid var(--line); color:var(--muted)}
+  .q .lean.approve{color:var(--approve); border-color:color-mix(in srgb,var(--approve) 40%,transparent)}
+  .q .lean.reject{color:var(--reject); border-color:color-mix(in srgb,var(--reject) 40%,transparent)}
+  .q .stale{opacity:.55}
+
+  /* Dossier */
+  .claim{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px}
+  .claim .f .k{font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+  .claim .f .v{font-size:14px; font-weight:550; margin-top:2px; word-break:break-word}
+  .claim .f .v.big{font-family:var(--mono); font-size:19px}
+
+  .signal{border-left:2px solid var(--line); padding:2px 0 2px 12px; margin-bottom:11px}
+  .signal .a{font-weight:620; font-size:13px}
+  .signal .v{font-family:var(--mono); font-size:11.5px; color:var(--accent); margin:2px 0}
+  .signal .d{font-size:12.5px; color:var(--muted); line-height:1.55}
+  .signal.nyx{border-left-color:var(--review)}
+  .signal.nyx .v{color:var(--review)}
+
+  .rec{display:flex; align-items:center; gap:11px; padding:12px 14px; border-radius:10px;
+    background:var(--panel-2); border:1px solid var(--line); margin-bottom:14px}
+  .rec .badge{font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+    padding:4px 9px; border-radius:6px; border:1px solid var(--line); color:var(--muted); white-space:nowrap}
+  .rec .badge.approve{color:var(--approve); border-color:color-mix(in srgb,var(--approve) 45%,transparent)}
+  .rec .badge.reject{color:var(--reject); border-color:color-mix(in srgb,var(--reject) 45%,transparent)}
+  .rec .txt{font-size:13px; color:var(--muted); line-height:1.5}
+
+  /* Form */
+  .dgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:9px; margin-bottom:6px}
+  .dopt{border:1px solid var(--line); border-radius:10px; padding:11px 13px; cursor:pointer; background:var(--panel-2)}
+  .dopt:hover{border-color:var(--accent)}
+  .dopt[aria-pressed="true"]{border-color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--panel-2))}
+  .dopt[aria-pressed="true"][data-o="reject"]{border-color:var(--reject); background:color-mix(in srgb,var(--reject) 9%,var(--panel-2))}
+  .dopt .l{font-weight:620; font-size:13.5px}
+  .dopt .h{font-size:11.5px; color:var(--faint); margin-top:2px; line-height:1.45}
+  .dopt .ov{font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--review); margin-top:5px}
+
+  .field{margin-top:13px}
+  .field label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:5px}
+  .field input, .field select, .field textarea{width:100%; background:var(--panel-2); color:var(--ink);
+    border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-family:var(--sans); font-size:13.5px}
+  .field textarea{resize:vertical; min-height:74px; line-height:1.55}
+  .field input:focus, .field select:focus, .field textarea:focus{outline:none; border-color:var(--accent)}
+  .field .hint{font-size:11.5px; color:var(--faint); margin-top:4px; line-height:1.45}
+  .field.bad input, .field.bad select, .field.bad textarea{border-color:var(--reject)}
+  .field .err{font-size:11.5px; color:var(--reject); margin-top:4px; display:none; line-height:1.45}
+  .field.bad .err{display:block}
+
+  /* Divergence: the Case acted on values other than the ones we submitted.
+     Deliberately the loudest thing on the page — a reviewer who misses this
+     approves a claim that does not exist. */
+  .diverge{border:1px solid var(--reject); border-left:4px solid var(--reject);
+    background:color-mix(in srgb, var(--reject) 9%, var(--panel));
+    border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; box-shadow:var(--shadow)}
+  .diverge h2{margin:0 0 6px; font-size:14px; letter-spacing:.01em; color:var(--reject)}
+  .diverge .lede{font-size:13px; color:var(--ink); line-height:1.55; margin-bottom:12px}
+  .diverge table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px}
+  .diverge th{text-align:left; font-weight:600; color:var(--muted); font-size:10.5px;
+    letter-spacing:.14em; text-transform:uppercase; padding:0 10px 6px 0}
+  .diverge td{padding:5px 10px 5px 0; border-top:1px solid var(--line); vertical-align:top}
+  .diverge td.was{color:var(--muted); text-decoration:line-through}
+  .diverge td.now{color:var(--reject); font-weight:600}
+  .diverge .src{margin-top:11px; font-size:11.5px; color:var(--muted); line-height:1.5}
+  .pill-basis{display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; padding:2px 7px; border-radius:999px; margin-left:8px;
+    border:1px solid var(--reject); color:var(--reject); vertical-align:middle}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:11px}
+  @media (max-width:620px){ .row2{grid-template-columns:1fr} }
+
+  .override{border:1px solid var(--review); border-radius:10px; padding:13px 15px; margin-top:14px;
+    background:color-mix(in srgb,var(--review) 8%,var(--panel-2)); display:none}
+  .override.on{display:block}
+  .override .t{font-weight:650; font-size:13.5px; color:var(--review); display:flex; align-items:center; gap:8px}
+  .override .d{font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.55}
+  .ack{display:flex; gap:9px; align-items:flex-start; margin-top:11px; cursor:pointer}
+  .ack input{width:16px; height:16px; margin-top:2px; flex:none; accent-color:var(--review)}
+  .ack span{font-size:12.5px; line-height:1.5}
+
+  .actions{display:flex; gap:10px; align-items:center; margin-top:18px; flex-wrap:wrap}
+  .submit{font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+    background:var(--accent); color:#04121e; border:0; border-radius:9px; padding:12px 22px; cursor:pointer; font-weight:600}
+  .submit:disabled{opacity:.45; cursor:not-allowed}
+  .submit.reject{background:var(--reject); color:#fff}
+  .note{font-size:12px; color:var(--faint)}
+
+  .banner{border-radius:10px; padding:12px 15px; margin-bottom:14px; font-size:13px; display:none; line-height:1.55}
+  .banner.on{display:block}
+  .banner.ok{border:1px solid var(--approve); color:var(--approve);
+    background:color-mix(in srgb,var(--approve) 8%,transparent)}
+  .banner.bad{border:1px solid var(--reject); color:var(--reject);
+    background:color-mix(in srgb,var(--reject) 8%,transparent)}
+  .banner .h{font-family:var(--mono); font-size:11px; color:var(--faint); margin-top:6px; word-break:break-all}
+
+  .empty{color:var(--faint); font-family:var(--mono); font-size:12px; text-align:center; padding:36px 12px; line-height:1.7}
+  footer{margin-top:26px; font-family:var(--mono); font-size:11px; color:var(--faint); line-height:1.7; text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">
+      <div class="eyebrow">Human-in-the-loop</div>
+      <h1>Reviewer Cockpit</h1>
+      <div class="sub">Structured adjudication over the real Action Center task</div>
+    </div>
+    <div class="spacer"></div>
+    <a class="navlink" href="/dashboard">Consensus</a>
+    <a class="navlink" href="/ledger">Ledger</a>
+    <a class="navlink" href="/admin">Admin</a>
+    <button class="tbtn" id="theme" title="Toggle theme">◐</button>
+  </header>
+
+  <div class="cols">
+    <!-- Queue -->
+    <div>
+      <div class="card">
+        <h2>Pending reviews <span id="qcount" class="mono" style="color:var(--faint)"></span></h2>
+        <ul class="q" id="queue"></ul>
+        <div class="empty" id="qempty">Loading the real queue…</div>
+      </div>
+    </div>
+
+    <!-- Dossier + decision -->
+    <div>
+      <div id="banner" class="banner"></div>
+      <div id="pane">
+        <div class="card"><div class="empty">Select a claim from the queue to review it.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Decisions here complete the real Orchestrator Action Center task and are appended to the
+    tamper-evident Decision Ledger.<br>
+    Overrides of the committee's recommendation are recorded with their justification.
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let CATALOG = null, CURRENT = null, BUSY = false;
+
+/* Theme — mirrors the other surfaces so the toggle wins over the OS setting. */
+(function(){
+  const saved = localStorage.getItem('theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  $('#theme').onclick = () => {
+    const now = document.documentElement.getAttribute('data-theme')
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = now === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  };
+})();
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = (n, c) => (n || n === 0)
+  ? `${Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c || ''}`.trim()
+  : '—';
+
+function banner(kind, html){
+  const b = $('#banner');
+  b.className = 'banner on ' + kind;
+  b.innerHTML = html;
+  b.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function clearBanner(){ $('#banner').className = 'banner'; }
+
+/* ── Queue ────────────────────────────────────────────────────────────────── */
+async function loadQueue(selectFirst){
+  try{
+    const r = await fetch('/api/review/queue');
+    const d = await r.json();
+    const ul = $('#queue'), empty = $('#qempty');
+    ul.innerHTML = '';
+    $('#qcount').textContent = d.count ? `(${d.count})` : '';
+
+    if (d.error) {
+      empty.style.display = 'block';
+      empty.textContent = 'Could not read the queue: ' + d.error;
+      return;
+    }
+    if (!d.items || !d.items.length) {
+      empty.style.display = 'block';
+      empty.textContent = 'No claims are waiting for a human right now.\nSubmit one on the intake form that trips a guardrail.';
+      return;
+    }
+    empty.style.display = 'none';
+
+    for (const it of d.items){
+      const li = document.createElement('li');
+      li.setAttribute('role','option');
+      if (!it.has_context) li.className = 'stale';
+      const lean = (it.ai_lean || 'uncertain');
+      li.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+          <span class="who">${esc(it.employee_name || it.title || 'Prior-session task')}</span>
+          <span class="amt">${it.claimed_amount ? money(it.claimed_amount, it.currency) : ''}</span>
+        </div>
+        <div class="meta">${esc(it.vendor || '—')} · task ${it.task_id}</div>
+        <div style="margin-top:6px"><span class="lean ${lean}">AI leans ${lean}</span></div>`;
+      li.onclick = () => selectTask(it.task_id, li);
+      ul.appendChild(li);
+      if (selectFirst && it.has_context && !CURRENT) selectTask(it.task_id, li);
+    }
+  }catch(e){
+    $('#qempty').style.display = 'block';
+    $('#qempty').textContent = 'Queue failed to load: ' + e.message;
+  }
+}
+
+/* ── Dossier ──────────────────────────────────────────────────────────────── */
+async function selectTask(taskId, li){
+  document.querySelectorAll('.q li').forEach(x => x.setAttribute('aria-selected','false'));
+  if (li) li.setAttribute('aria-selected','true');
+  clearBanner();
+  $('#pane').innerHTML = '<div class="card"><div class="empty">Loading the dossier…</div></div>';
+  try{
+    const r = await fetch('/api/review/' + taskId);
+    if (!r.ok) {
+      const e = await r.json().catch(()=>({}));
+      $('#pane').innerHTML = `<div class="card"><div class="empty">${esc(e.detail || 'Could not load this task.')}</div></div>`;
+      return;
+    }
+    CURRENT = await r.json();
+    CURRENT.task_id = taskId;
+    renderDossier();
+  }catch(e){
+    $('#pane').innerHTML = `<div class="card"><div class="empty">Failed: ${esc(e.message)}</div></div>`;
+  }
+}
+
+function renderDossier(){
+  const c = CURRENT.claim, ex = CURRENT.explanation || {}, lean = CURRENT.ai_lean;
+  const sigs = (ex.signals || []).map(s => `
+    <div class="signal ${/Nyx/.test(s.agent) ? 'nyx' : ''}">
+      <div class="a">${esc(s.agent)}</div>
+      <div class="v">${esc(s.verdict)}</div>
+      <div class="d">${esc(s.detail)}</div>
+    </div>`).join('') || '<div class="empty" style="padding:14px">The committee has not scored this claim yet.</div>';
+
+  const rc = ex.receipt_check;
+  const receipt = rc ? `
+    <div class="card">
+      <h2>Receipt corroboration</h2>
+      <div class="claim">
+        <div class="f"><div class="k">OCR confidence</div><div class="v">${rc.ocr_confidence ?? '—'}</div></div>
+        <div class="f"><div class="k">Corroborated</div><div class="v">${rc.corroborated === true ? 'Yes' : rc.corroborated === false ? 'No' : '—'}</div></div>
+        <div class="f"><div class="k">Method</div><div class="v" style="font-size:12.5px">${esc(rc.method || '—')}</div></div>
+      </div>
+      ${(rc.mismatches||[]).length ? `<div class="signal" style="margin-top:11px;border-left-color:var(--reject)">
+        <div class="d">Mismatches: ${esc(rc.mismatches.join('; '))}</div></div>` : ''}
+      ${rc.note ? `<div class="field"><div class="hint">${esc(rc.note)}</div></div>` : ''}
+    </div>` : '';
+
+  const dissent = (ex.dissent || []).length ? `
+    <div class="card">
+      <h2>Dissent on the panel</h2>
+      ${ex.dissent.map(d => `<div class="signal" style="border-left-color:var(--review)">
+        <div class="d">${esc(typeof d === 'string' ? d : (d.detail || JSON.stringify(d)))}</div></div>`).join('')}
+    </div>` : '';
+
+  // The Case reads its claim from the intake email, not from the arguments this
+  // app sends, and the two can disagree completely. Show that before anything
+  // else: everything below (the committee's reasoning included) was computed on
+  // the submitted values, while the payout will use the adjudicated ones.
+  const dv = CURRENT.divergence || {};
+  const diverge = dv.material ? `
+    <div class="diverge">
+      <h2>⚠ The Case is not acting on these submitted values</h2>
+      <div class="lede">${esc(dv.summary)}</div>
+      <table>
+        <tr><th>Field</th><th>This app submitted</th><th>The Case is using</th></tr>
+        ${(dv.fields||[]).filter(f => !f.agrees).map(f => `
+          <tr>
+            <td>${esc(f.field)}</td>
+            <td class="was">${esc(String(f.submitted))}</td>
+            <td class="now">${esc(String(f.adjudicated))}</td>
+          </tr>`).join('')}
+      </table>
+      <div class="src">
+        Read from the real <span class="mono">${esc(dv.source_process||'')}</span> job
+        (<span class="mono">${esc((dv.source_job_key||'').slice(0,8))}</span>)${
+          dv.definitive
+            ? ' — this payout has already executed, so these are final.'
+            : ' — the payout has not run yet, so these are the values it is on course to use.'}
+        Your decision below is checked against the Case&rsquo;s amount, not the submitted one.
+      </div>
+    </div>` : '';
+
+  $('#pane').innerHTML = `
+    ${diverge}
+    <div class="card">
+      <h2>The claim</h2>
+      <div class="claim">
+        <div class="f"><div class="k">Claimant</div><div class="v">${esc(c.employee_name || '—')}</div></div>
+        <div class="f"><div class="k">Amount</div><div class="v big">${money(c.amount, c.currency)}${
+          CURRENT.amount_basis === 'case-adjudicated' ? '<span class="pill-basis">case value</span>' : ''}</div></div>
+        <div class="f"><div class="k">Vendor</div><div class="v">${esc(c.vendor || '—')}</div></div>
+        <div class="f"><div class="k">Date</div><div class="v">${esc(c.expense_date || '—')}</div></div>
+        <div class="f"><div class="k">Type</div><div class="v">${esc(c.expense_type || '—')}</div></div>
+        <div class="f"><div class="k">Case</div><div class="v mono" style="font-size:12px">${esc(c.case_id || '—')}</div></div>
+      </div>
+      ${c.business_purpose ? `<div class="field"><label>Business purpose</label>
+        <div class="hint" style="font-size:13px;color:var(--muted)">${esc(c.business_purpose)}</div></div>` : ''}
+      ${CURRENT.review_link ? `<div class="field"><div class="hint">
+        Also open in <a href="${esc(CURRENT.review_link)}" target="_blank" rel="noopener"
+        style="color:var(--accent)">Action Center →</a></div></div>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>What the committee found</h2>
+      ${dv.material ? `<div class="signal" style="border-left-color:var(--reject);margin-bottom:11px">
+        <div class="d">These findings were computed on the <strong>submitted</strong> values
+        (${esc(String((dv.fields||[]).filter(f=>!f.agrees).map(f=>f.field).join(', ')))} differ from
+        what the Case is using). Weigh them accordingly — the committee did not
+        reason about the claim the Case is about to pay.</div>
+      </div>` : ''}
+      <div class="rec">
+        <span class="badge ${lean}">AI leans ${esc(lean)}</span>
+        <span class="txt">${esc(ex.headline || 'No rationale recorded.')}</span>
+      </div>
+      ${sigs}
+    </div>
+    ${receipt}
+    ${dissent}
+    ${renderForm()}`;
+
+  wireForm();
+}
+
+/* ── Decision form ────────────────────────────────────────────────────────── */
+function renderForm(){
+  if (!CURRENT.has_context) {
+    return `<div class="card"><h2>Decide</h2><div class="empty">
+      This task was raised by a different session, so there is no claim record or
+      committee brief behind it.<br>Decide it in Action Center instead — this cockpit
+      will not adjudicate a claim it cannot show you.</div></div>`;
+  }
+  const om = CURRENT.override_map || {};
+  const opts = (CATALOG.decisions || []).map(d => `
+    <div class="dopt" role="button" aria-pressed="false" data-d="${d.value}"
+         data-o="${d.value === 'reject' ? 'reject' : 'approve'}">
+      <div class="l">${esc(d.label)}</div>
+      <div class="h">${esc(d.hint)}</div>
+      ${om[d.value] ? '<div class="ov">⚠ Overrides the committee</div>' : ''}
+    </div>`).join('');
+
+  return `
+    <div class="card">
+      <h2>Decide</h2>
+      <div class="dgrid">${opts}</div>
+      <div class="field" id="f-decision" style="margin-top:0">
+        <div class="err" id="e-decision"></div>
+      </div>
+
+      <div class="field" id="f-reason_code">
+        <label for="reason_code">Reason code</label>
+        <select id="reason_code"><option value="">Choose a decision first…</option></select>
+        <div class="err" id="e-reason_code"></div>
+      </div>
+
+      <div class="row2">
+        <div class="field" id="f-approved_amount" style="display:none">
+          <label for="approved_amount">Approved amount</label>
+          <input id="approved_amount" type="number" step="0.01" min="0" placeholder="0.00">
+          <div class="hint" id="h-approved_amount"></div>
+          <div class="err" id="e-approved_amount"></div>
+        </div>
+        <div class="field" id="f-policy_citation" style="display:none">
+          <label for="policy_citation">Policy citation</label>
+          <input id="policy_citation" placeholder="e.g. Expense Policy §4.2 — meal limit">
+          <div class="hint">Name the clause or limit this rejection rests on.</div>
+          <div class="err" id="e-policy_citation"></div>
+        </div>
+      </div>
+
+      <div class="field" id="f-conditions" style="display:none">
+        <label for="conditions">Condition the claimant must meet</label>
+        <textarea id="conditions" placeholder="e.g. Reimbursed on receipt of an itemised invoice within 7 days."></textarea>
+        <div class="err" id="e-conditions"></div>
+      </div>
+
+      <div class="override" id="ovbox">
+        <div class="t">⚠ You are overriding the committee</div>
+        <div class="d" id="ovtext"></div>
+        <label class="ack">
+          <input type="checkbox" id="override_ack">
+          <span>I have read the committee's reasoning and am deliberately overriding it.
+                My justification below will be recorded in the Decision Ledger.</span>
+        </label>
+        <div class="field" id="f-override_ack" style="margin-top:0"><div class="err" id="e-override_ack"></div></div>
+      </div>
+
+      <div class="field" id="f-notes">
+        <label for="notes">Reviewer notes</label>
+        <textarea id="notes" placeholder="What did you check? What convinced you?"></textarea>
+        <div class="err" id="e-notes"></div>
+      </div>
+
+      <div class="field" id="f-reviewer">
+        <label for="reviewer">Your name</label>
+        <input id="reviewer" placeholder="Decisions are attributed to a person.">
+        <div class="err" id="e-reviewer"></div>
+      </div>
+
+      <div class="actions">
+        <button class="submit" id="go" disabled>Submit decision</button>
+        <span class="note" id="gonote">Choose a decision to continue.</span>
+      </div>
+    </div>`;
+}
+
+function wireForm(){
+  if (!CURRENT.has_context) return;
+  const rv = $('#reviewer');
+  if (rv) rv.value = localStorage.getItem('reviewer_name') || '';
+
+  document.querySelectorAll('.dopt').forEach(el => {
+    el.onclick = () => {
+      document.querySelectorAll('.dopt').forEach(x => x.setAttribute('aria-pressed','false'));
+      el.setAttribute('aria-pressed','true');
+      onDecision(el.dataset.d);
+    };
+  });
+}
+
+function onDecision(d){
+  clearFieldErrors();
+  const codes = (CATALOG.reason_codes || {})[d] || {};
+  const sel = $('#reason_code');
+  sel.innerHTML = '<option value="">Select a reason…</option>' +
+    Object.entries(codes).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+
+  $('#f-approved_amount').style.display = d === 'partial_approve' ? '' : 'none';
+  $('#f-policy_citation').style.display = d === 'reject' ? '' : 'none';
+  $('#f-conditions').style.display = d === 'approve_with_conditions' ? '' : 'none';
+
+  if (d === 'partial_approve') {
+    const c = CURRENT.claim;
+    $('#approved_amount').max = c.amount || undefined;
+    $('#h-approved_amount').textContent =
+      `Claimed ${money(c.amount, c.currency)}. Enter the portion you are approving — the balance is declined.`;
+  }
+
+  const ov = (CURRENT.override_map || {})[d];
+  $('#ovbox').className = 'override' + (ov ? ' on' : '');
+  if (ov) {
+    $('#ovtext').innerHTML =
+      `Four agents reasoned about this claim and recommended <b>${esc(CURRENT.ai_lean)}</b>. ` +
+      `You may absolutely overrule them — but not silently. Acknowledge the override and say why.`;
+  } else {
+    $('#override_ack').checked = false;
+  }
+
+  const go = $('#go');
+  go.disabled = false;
+  go.className = 'submit' + (d === 'reject' ? ' reject' : '');
+  go.textContent = ({
+    approve: 'Approve in full',
+    partial_approve: 'Approve in part',
+    approve_with_conditions: 'Approve with conditions',
+    reject: 'Reject claim',
+  })[d] || 'Submit decision';
+  $('#gonote').textContent = ov
+    ? 'This contradicts the committee — a justification is required.'
+    : 'This completes the real Action Center task.';
+  go.onclick = () => submitDecision(d);
+}
+
+function clearFieldErrors(){
+  document.querySelectorAll('.field').forEach(f => f.classList.remove('bad'));
+  document.querySelectorAll('.err').forEach(e => e.textContent = '');
+}
+
+function showErrors(errs){
+  clearFieldErrors();
+  let first = null;
+  for (const [k, msg] of Object.entries(errs)) {
+    const e = document.getElementById('e-' + k), f = document.getElementById('f-' + k);
+    if (e) e.textContent = msg;
+    if (f) { f.classList.add('bad'); first = first || f; }
+    if (k === 'override_ack') $('#ovbox').classList.add('on');
+  }
+  if (first) first.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function submitDecision(decision){
+  if (BUSY) return;
+  BUSY = true;
+  const go = $('#go'); go.disabled = true; const label = go.textContent; go.textContent = 'Submitting…';
+  clearBanner();
+
+  const body = {
+    decision,
+    reason_code: $('#reason_code').value,
+    approved_amount: $('#approved_amount') ? $('#approved_amount').value : null,
+    policy_citation: $('#policy_citation') ? $('#policy_citation').value : '',
+    conditions: $('#conditions') ? $('#conditions').value : '',
+    notes: $('#notes').value,
+    reviewer: $('#reviewer').value,
+    override_ack: $('#override_ack').checked,
+  };
+  localStorage.setItem('reviewer_name', body.reviewer || '');
+
+  try{
+    const r = await fetch(`/api/review/${CURRENT.task_id}/decide`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(()=>({}));
+
+    if (r.status === 422) { showErrors(d.errors || {}); return; }
+    if (r.status === 409) {
+      banner('bad', `This task is no longer actionable — it was completed or reassigned elsewhere. Refreshing the queue.`);
+      CURRENT = null; $('#pane').innerHTML = '<div class="card"><div class="empty">Select a claim from the queue.</div></div>';
+      await loadQueue(false);
+      return;
+    }
+    if (!r.ok) { banner('bad', esc(d.detail || `Failed (${r.status}).`)); return; }
+
+    clearFieldErrors();
+    banner('ok', `<b>${esc(d.summary)}</b>
+      ${d.is_override ? '<br>Recorded as an <b>override</b> of the committee.' : ''}
+      <div class="h">Action Center task ${d.task_id} completed · ledger block #${d.ledger_block.index}
+      · ${esc(d.ledger_block.hash.slice(0,32))}…</div>`);
+    CURRENT = null;
+    $('#pane').innerHTML = '<div class="card"><div class="empty">Decision recorded. Select the next claim.</div></div>';
+    await loadQueue(false);
+  }catch(e){
+    banner('bad', 'Network error: ' + esc(e.message));
+  }finally{
+    BUSY = false;
+    if ($('#go')) { $('#go').disabled = false; $('#go').textContent = label; }
+  }
+}
+
+/* ── Boot ─────────────────────────────────────────────────────────────────── */
+(async function(){
+  try{
+    CATALOG = await (await fetch('/api/review/catalog')).json();
+  }catch(e){
+    $('#pane').innerHTML = `<div class="card"><div class="empty">Could not load the decision catalog: ${esc(e.message)}</div></div>`;
+    return;
+  }
+  await loadQueue(true);
+  setInterval(() => { if (!CURRENT && !BUSY) loadQueue(false); }, 20000);
+})();
+</script>
+</body>
+</html>
